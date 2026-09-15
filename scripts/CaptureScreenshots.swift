@@ -33,31 +33,21 @@ enum CaptureScreenshots {
 
 @MainActor
 private func captureAll(to out: URL) throws {
-    try write(name: "home-dark.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "home", to: out) { model, presentation in
         presentation.route = .home
         seedHome(model)
         model.homeTab = .tools
     }
-    try write(name: "home-light.png", appearance: .aqua, to: out) { model, presentation in
-        presentation.route = .home
-        seedHome(model)
-        model.homeTab = .tools
-    }
-    try write(name: "stats-dark.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "stats", to: out) { model, presentation in
         presentation.route = .home
         seedHome(model)
         model.homeTab = .stats
     }
-    try write(name: "stats-light.png", appearance: .aqua, to: out) { model, presentation in
-        presentation.route = .home
-        seedHome(model)
-        model.homeTab = .stats
-    }
-    try write(name: "keyboard.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "keyboard", to: out) { model, presentation in
         presentation.route = .keyboard
         seedHome(model)
     }
-    try write(name: "scroll.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "scroll", to: out) { model, presentation in
         presentation.route = .scroll
         seedHome(model)
         model.scrollReverseEnabled = true
@@ -70,40 +60,40 @@ private func captureAll(to out: URL) throws {
         model.scrollReverseByDevice = ["1133:16514": true]
         model.accessibilityTrusted = true
     }
-    try write(name: "lid.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "lid", to: out) { model, presentation in
         presentation.route = .lid
         seedHome(model)
         model.lidSleepDisabled = true
         model.lidStatus = "Stays on with the lid closed"
     }
-    try write(name: "awake.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "awake", to: out) { model, presentation in
         presentation.route = .awake
         seedHome(model)
     }
-    try write(name: "menubar.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "menubar", to: out) { model, presentation in
         presentation.route = .menuBar
         seedHome(model)
         model.menuBarHideEnabled = true
         model.menuBarHidden = true
         model.menuBarStatus = "Hidden icons sit left of the chevron"
     }
-    try write(name: "this-mac.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "this-mac", to: out) { model, presentation in
         presentation.route = .machine
         seedHome(model)
     }
-    try write(name: "battery.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "battery", to: out) { model, presentation in
         presentation.route = .battery
         seedHome(model)
     }
-    try write(name: "network.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "network", to: out) { model, presentation in
         presentation.route = .network
         seedHome(model)
     }
-    try write(name: "storage.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "storage", to: out) { model, presentation in
         presentation.route = .storage
         seedHome(model)
     }
-    try write(name: "settings.png", appearance: .darkAqua, to: out) { model, presentation in
+    try writePair(name: "settings", to: out) { model, presentation in
         presentation.route = .settings
         seedHome(model)
         model.menuBarDisplay = .logoAndActive
@@ -211,6 +201,16 @@ private func demoStats() -> SystemSample {
         ProcessUsage(pid: 3, name: "WindowServer", cpuPercent: 4, ramBytes: 480_000_000)
     ]
     return sample
+}
+
+@MainActor
+private func writePair(
+    name: String,
+    to directory: URL,
+    configure: (AppModel, PanelPresentation) -> Void
+) throws {
+    try write(name: "\(name)-dark.png", appearance: .darkAqua, to: directory, configure: configure)
+    try write(name: "\(name)-light.png", appearance: .aqua, to: directory, configure: configure)
 }
 
 @MainActor
