@@ -144,11 +144,19 @@ private func seedHome(_ model: AppModel) {
     model.menuBarHidden = true
     model.menuBarStatus = "Icons stay in the menu bar"
     model.menuBarNotice = nil
+    model.menuBarStripLayout = .grid
+    model.menuBarStripIconSize = MenuBarTool.defaultIconSize
+    model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize
+    model.screenRecordingGranted = true
 
     model.visibleHomeTools = Array(HomeTool.allCases)
     model.hiddenHomeTools = []
     model.menuBarStats = .cpu
     model.stats = demoStats()
+    if let plist = NSDictionary(contentsOfFile: "Resources/Info.plist"),
+       let version = plist["CFBundleShortVersionString"] as? String {
+        model.appVersion = version
+    }
 }
 
 @MainActor

@@ -1,26 +1,20 @@
 # Yeobun
 
-<p align="center">
-  <img src="docs/screenshots/icon.png" width="128" alt="Yeobun icon">
-</p>
+<img src="docs/screenshots/icon.png" width="128" alt="Yeobun icon">
 
-<p align="center">N6 Studio</p>
+[![Version](https://img.shields.io/github/v/release/n6-studio/yeobun?label=version)](https://github.com/n6-studio/yeobun/releases/latest)
+[![Made by N6 Studio](https://img.shields.io/badge/Made_by-N6_Studio-4f8cc9?labelColor=353a40)](https://n6.studio/)
 
-<p align="center">
-  <strong>A Control Center–style panel in the menu bar for the extras macOS did not ship. No Dock icon.</strong><br>
-  Lock the built-in keyboard. Reverse mouse scroll. Stay on with the lid closed. Keep the Mac awake. Hide menu bar icons behind a chevron. Glance at this Mac.
-</p>
+**A Control Center–style panel in the menu bar for the extras macOS did not ship. No Dock icon.**  
+Lock the built-in keyboard. Reverse mouse scroll. Stay on with the lid closed. Keep the Mac awake. Hide menu bar icons behind a chevron. Glance at this Mac.
 
-<p align="center"><em>Yeobun</em> is from Korean <strong>여분</strong>: spare, extra.</p>
+*Yeobun* is from Korean **여분**: spare, extra.
 
-<p align="center">
-  <img src="docs/screenshots/home-light.png" width="300" alt="Yeobun Tools tab in light mode">
-  <img src="docs/screenshots/home-dark.png" width="300" alt="Yeobun Tools tab in dark mode">
-</p>
-<p align="center">
-  <img src="docs/screenshots/stats-light.png" width="300" alt="Yeobun Stats tab in light mode">
-  <img src="docs/screenshots/stats-dark.png" width="300" alt="Yeobun Stats tab in dark mode">
-</p>
+<img src="docs/screenshots/home-light.png" width="300" alt="Yeobun Tools tab in light mode">
+<img src="docs/screenshots/home-dark.png" width="300" alt="Yeobun Tools tab in dark mode">
+
+<img src="docs/screenshots/stats-light.png" width="300" alt="Yeobun Stats tab in light mode">
+<img src="docs/screenshots/stats-dark.png" width="300" alt="Yeobun Stats tab in dark mode">
 
 Click the wrench to open a two-column grid. **Tools** and **Stats** are tabs; the last one you used is remembered. Click a tile’s **icon** to toggle it. Click the rest of the tile for options. The **gear** opens Settings.
 
@@ -54,9 +48,7 @@ Active tiles fill with their color.
 
 ### Built-in keyboard
 
-<p align="center">
-  <img src="docs/screenshots/keyboard.png" width="320" alt="Built-in keyboard detail">
-</p>
+<img src="docs/screenshots/keyboard.png" width="320" alt="Built-in keyboard detail">
 
 Disables the MacBook's **built-in keyboard**. The trackpad, any external keyboard, Touch ID, and the power button keep working. A reboot always unlocks the keys.
 
@@ -64,17 +56,13 @@ Optional **Unlock after** (5–60 minutes) is for wiping the keyboard down. **Di
 
 ### Scroll reverse
 
-<p align="center">
-  <img src="docs/screenshots/scroll.png" width="320" alt="Scroll reverse detail">
-</p>
+<img src="docs/screenshots/scroll.png" width="320" alt="Scroll reverse detail">
 
 Reverses **mouse wheel** scrolling so a mouse feels classic while the **trackpad stays natural**. Each mouse can be switched on its own. Needs Accessibility; the panel will ask if it is missing.
 
 ### Lid awake
 
-<p align="center">
-  <img src="docs/screenshots/lid.png" width="320" alt="Lid awake detail">
-</p>
+<img src="docs/screenshots/lid.png" width="320" alt="Lid awake detail">
 
 Keeps the Mac on **battery** when the lid is shut. The first toggle asks for an administrator password once; later switches do not. The setting stays until you turn it off — quitting the app does not restore sleep.
 
@@ -82,9 +70,7 @@ A closed MacBook with nowhere to dump heat can get hot. Switch it off when you a
 
 ### Keep awake
 
-<p align="center">
-  <img src="docs/screenshots/awake.png" width="320" alt="Keep awake detail with remaining time">
-</p>
+<img src="docs/screenshots/awake.png" width="320" alt="Keep awake detail with remaining time">
 
 Blocks idle sleep and display sleep. Turn it on indefinitely, or pick a duration first (5 minutes through 5 hours). The tile shows time left. Quitting the app does not drop the hold.
 
@@ -92,9 +78,7 @@ Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the li
 
 ### Hidden icons
 
-<p align="center">
-  <img src="docs/screenshots/menubar.png" width="320" alt="Hidden icons detail">
-</p>
+<img src="docs/screenshots/menubar.png" width="320" alt="Hidden icons detail">
 
 A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). Click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
 
@@ -108,14 +92,11 @@ If the chevron ends up on the wrong side of the hidden icons, they stay shown an
 
 Informational only. Sampled while the panel is open, and in the menu bar if you turn on a glance.
 
-<p align="center">
-  <img src="docs/screenshots/this-mac.png" width="320" alt="This Mac CPU and memory">
-  <img src="docs/screenshots/battery.png" width="320" alt="Battery charge, health, and accessories">
-</p>
-<p align="center">
-  <img src="docs/screenshots/network.png" width="320" alt="Network link, IP, and throughput">
-  <img src="docs/screenshots/storage.png" width="320" alt="Boot disk used and free space">
-</p>
+<img src="docs/screenshots/this-mac.png" width="320" alt="This Mac CPU and memory">
+<img src="docs/screenshots/battery.png" width="320" alt="Battery charge, health, and accessories">
+
+<img src="docs/screenshots/network.png" width="320" alt="Network link, IP, and throughput">
+<img src="docs/screenshots/storage.png" width="320" alt="Boot disk used and free space">
 
 - **This Mac** — live CPU and RAM on the tile; detail adds pressure, swap, thermal state, uptime, and the top processes.
 - **Battery** — charge, time remaining, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
@@ -124,9 +105,7 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 
 ## Settings
 
-<p align="center">
-  <img src="docs/screenshots/settings.png" width="320" alt="Settings: login item, menu bar, status check">
-</p>
+<img src="docs/screenshots/settings.png" width="320" alt="Settings: login item, menu bar, status check">
 
 - **Open at login** — keep Yeobun in the menu bar (on by default).
 - **Menu bar** — logo only, icons for tools that are on, or both. The logo stays when nothing is on, so you can still find the app.

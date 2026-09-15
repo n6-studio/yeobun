@@ -407,9 +407,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var appVersion: String {
-        UpdateCheckService.currentVersion
-    }
+    @Published var appVersion = UpdateCheckService.currentVersion
 
     static func gigabytes(_ bytes: UInt64) -> String {
         StatsFormat.gigabytes(bytes)
