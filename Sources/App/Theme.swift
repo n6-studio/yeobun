@@ -41,6 +41,7 @@ enum PanelRoute: Equatable {
     case scroll
     case lid
     case awake
+    case menuBar
     case machine
     case battery
     case network
@@ -50,14 +51,15 @@ enum PanelRoute: Equatable {
     var title: String {
         switch self {
         case .home: Brand.product
-        case .keyboard: "Keyboard"
-        case .scroll: "Scroll"
-        case .lid: "Lid Sleep"
-        case .awake: "Awake"
-        case .machine: "This Mac"
-        case .battery: "Battery"
-        case .network: "Network"
-        case .storage: "Storage"
+        case .keyboard: ToolID.keyboard.title
+        case .scroll: ToolID.scroll.title
+        case .lid: ToolID.lid.title
+        case .awake: ToolID.awake.title
+        case .menuBar: ToolID.menuBar.title
+        case .machine: ToolID.machine.title
+        case .battery: ToolID.battery.title
+        case .network: ToolID.network.title
+        case .storage: ToolID.storage.title
         case .settings: "Settings"
         }
     }
@@ -78,8 +80,8 @@ enum HomeTab: String, CaseIterable, Identifiable {
 
     var emptyLabel: String {
         switch self {
-        case .tools: "No tools"
-        case .stats: "No stats"
+        case .tools: "No tools on Home"
+        case .stats: "No stats on Home"
         }
     }
 }
@@ -89,10 +91,11 @@ typealias HomeTool = ToolID
 extension ToolID {
     var title: String {
         switch self {
-        case .keyboard: "Keyboard"
-        case .scroll: "Scroll"
-        case .lid: "Lid Sleep"
-        case .awake: "Awake"
+        case .keyboard: "Built-in keyboard"
+        case .scroll: "Scroll reverse"
+        case .lid: "Lid awake"
+        case .awake: "Keep awake"
+        case .menuBar: "Hidden icons"
         case .machine: "This Mac"
         case .battery: "Battery"
         case .network: "Network"
@@ -106,6 +109,7 @@ extension ToolID {
         case .scroll: "computermouse"
         case .lid: "moon.zzz"
         case .awake: "cup.and.saucer"
+        case .menuBar: "eye.slash"
         case .machine: "cpu"
         case .battery: "battery.100percent"
         case .network: "wifi"
@@ -119,6 +123,7 @@ extension ToolID {
         case .scroll: "computermouse.fill"
         case .lid: "moon.zzz.fill"
         case .awake: "cup.and.saucer.fill"
+        case .menuBar: "eye.slash.fill"
         case .machine: "cpu.fill"
         case .battery: "battery.100percent"
         case .network: "wifi"
@@ -132,6 +137,7 @@ extension ToolID {
         case .scroll: ModuleColor.scroll
         case .lid: ModuleColor.lid
         case .awake: ModuleColor.awake
+        case .menuBar: ModuleColor.menuBar
         case .machine, .battery, .network, .storage: ModuleColor.machine
         }
     }
@@ -157,6 +163,7 @@ extension ToolID {
         case .scroll: .scroll
         case .lid: .lid
         case .awake: .awake
+        case .menuBar: .menuBar
         case .machine: .machine
         case .battery: .battery
         case .network: .network
@@ -194,6 +201,7 @@ enum ModuleColor {
     static let scroll = Color.accentColor
     static let lid = Color.purple
     static let awake = Color.brown
+    static let menuBar = Color.teal
     static let machine = Color.secondary
     static let offFill = Color.primary.opacity(0.08)
     static let offFillHover = Color.primary.opacity(0.13)

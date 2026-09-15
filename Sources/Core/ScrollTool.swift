@@ -4,7 +4,7 @@ final class ScrollTool: ToggleTool {
     let id: ToolID = .scroll
 
     static let accessibilityMessage =
-        "Scroll reverse needs Accessibility permission (System Settings → Privacy & Security → Accessibility)."
+        "Allow Yeobun in Accessibility, then try again."
 
     func snapshot() throws -> ToggleSnapshot {
         ToggleSnapshot(
@@ -91,7 +91,7 @@ final class ScrollTool: ToggleTool {
             if !AccessibilityAuth.hasPermission {
                 throw ToolError.permission(Self.accessibilityMessage)
             }
-            throw ToolError.failed("Could not start scroll reverse.")
+            throw ToolError.failed("Unable to reverse scroll.")
         }
     }
 

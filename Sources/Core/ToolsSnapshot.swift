@@ -45,6 +45,16 @@ struct AwakeStatusJSON: Encodable {
     }
 }
 
+struct MenuBarStatusJSON: Encodable {
+    var enabled: Bool
+    var hidden: Bool
+    var iconSize: Int
+    var labelSize: Int
+    var layout: String
+    /// Status items the system left off screen right now (any hider's included).
+    var offscreenItems: Int
+}
+
 struct MacStatusJSON: Encodable {
     var cpuPercent: Int
     var ramUsedBytes: UInt64
@@ -83,6 +93,7 @@ struct ToolsSnapshot: Encodable {
     var scroll: ScrollStatusJSON
     var lid: LidStatusJSON
     var awake: AwakeStatusJSON
+    var menubar: MenuBarStatusJSON
     var mac: MacStatusJSON?
 }
 
@@ -95,6 +106,7 @@ enum StatusBuilder {
         let mice = DeviceMonitor.listMiceOnce()
         let lid = tools.lid.hardwareSnapshot()
         let awake = tools.awake.hardwareSnapshot()
+        let menuBar = tools.menuBar.hardwareSnapshot()
         return ToolsSnapshot(
             keyboard: KeyboardStatusJSON(
                 locked: keyboard.locked,
@@ -117,6 +129,14 @@ enum StatusBuilder {
             awake: AwakeStatusJSON(
                 active: awake.active,
                 remainingSeconds: awake.remainingSeconds
+            ),
+            menubar: MenuBarStatusJSON(
+                enabled: menuBar.enabled,
+                hidden: menuBar.hidden,
+                iconSize: menuBar.iconSize,
+                labelSize: menuBar.labelSize,
+                layout: menuBar.layout.rawValue,
+                offscreenItems: MenuBarOverflow.hiddenByMacOS().count
             ),
             mac: includeMac ? macStatus() : nil
         )

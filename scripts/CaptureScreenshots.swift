@@ -61,7 +61,7 @@ private func captureAll(to out: URL) throws {
         presentation.route = .scroll
         seedHome(model)
         model.scrollReverseEnabled = true
-        model.scrollStatus = "Trackpad stays natural"
+        model.scrollStatus = "Mouse wheel is reversed"
         model.mice = [
             MouseDevice(vendor: 1133, product: 16514, name: "MX Master 3S")
         ]
@@ -74,11 +74,18 @@ private func captureAll(to out: URL) throws {
         presentation.route = .lid
         seedHome(model)
         model.lidSleepDisabled = true
-        model.lidStatus = "Battery stays awake with the lid closed"
+        model.lidStatus = "Stays on with the lid closed"
     }
     try write(name: "awake.png", appearance: .darkAqua, to: out) { model, presentation in
         presentation.route = .awake
         seedHome(model)
+    }
+    try write(name: "menubar.png", appearance: .darkAqua, to: out) { model, presentation in
+        presentation.route = .menuBar
+        seedHome(model)
+        model.menuBarHideEnabled = true
+        model.menuBarHidden = true
+        model.menuBarStatus = "Hidden icons sit left of the chevron"
     }
     try write(name: "this-mac.png", appearance: .darkAqua, to: out) { model, presentation in
         presentation.route = .machine
@@ -106,14 +113,14 @@ private func captureAll(to out: URL) throws {
 @MainActor
 private func seedHome(_ model: AppModel) {
     model.keyboardLocked = true
-    model.keyboardStatus = "Built-in keys ignored until you unlock or reboot"
+    model.keyboardStatus = "Locked until you unlock or restart"
     model.keyboardError = nil
     model.keyboardBusy = false
     model.autoUnlockMinutes = 0
     model.dimKeyboardWhenLocked = true
 
     model.scrollReverseEnabled = false
-    model.scrollStatus = "Mouse scroll follows System Settings"
+    model.scrollStatus = "Follows System Settings"
     model.mice = [
         MouseDevice(vendor: 1133, product: 16514, name: "MX Master 3S")
     ]
@@ -122,7 +129,7 @@ private func seedHome(_ model: AppModel) {
     model.accessibilityTrusted = true
 
     model.lidSleepDisabled = false
-    model.lidStatus = "Battery sleeps when the lid closes"
+    model.lidStatus = "Sleeps when the lid closes"
     model.lidError = nil
     model.lidBusy = false
 
@@ -130,8 +137,13 @@ private func seedHome(_ model: AppModel) {
     model.awakeMinutes = 60
     model.awakeActive = true
     model.awakeRemainingSeconds = 47 * 60
-    model.awakeStatus = "Staying awake · 47 min left"
+    model.awakeStatus = "Won't sleep · 47 min left"
     model.awakeError = nil
+
+    model.menuBarHideEnabled = false
+    model.menuBarHidden = true
+    model.menuBarStatus = "Icons stay in the menu bar"
+    model.menuBarNotice = nil
 
     model.visibleHomeTools = Array(HomeTool.allCases)
     model.hiddenHomeTools = []

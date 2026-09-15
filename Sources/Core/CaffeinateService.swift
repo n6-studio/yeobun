@@ -7,7 +7,7 @@ import Foundation
 /// `caffeinate -di` creates `PreventUserIdleDisplaySleep` plus
 /// `PreventUserIdleSystemSleep`. `-t` drops them after N seconds.
 /// `-s` is intentionally unused: that assertion blocks lid-close sleep on AC,
-/// which is Lid Sleep's job.
+/// which is Lid awake's job.
 ///
 /// The process is spawned in its own group so it survives CLI (and GUI) exit.
 /// PID and deadline live in `ToolStateStore` so both controllers see the same hold.
@@ -49,7 +49,7 @@ final class CaffeinateService {
                 $0.awakeDeadline = deadline
             }
         } catch {
-            throw CaffeinateError(errorDescription: "Could not start caffeinate.")
+            throw CaffeinateError(errorDescription: "Unable to prevent sleep.")
         }
     }
 

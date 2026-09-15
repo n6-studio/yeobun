@@ -74,7 +74,7 @@ final class LidSleepService {
     private func installGrantViaTTY(_ argumentSets: [[String]]) throws {
         let user = NSUserName()
         guard user.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else {
-            throw LidSleepError(errorDescription: "Could not install administrator grant for this account.")
+            throw LidSleepError(errorDescription: "Unable to save administrator access for this account.")
         }
         let restore = Self.defaultRestoreMinutes
         let rule = "\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -b sleep 0, /usr/bin/pmset -b sleep \(restore), /usr/bin/pmset -b disablesleep 0, /usr/bin/pmset -b disablesleep 1"
@@ -88,7 +88,7 @@ final class LidSleepService {
         let status = runInteractive("/usr/bin/sudo", ["/bin/sh", "-lc", shell])
         if status != 0 {
             throw LidSleepError(
-                errorDescription: "Could not change lid-sleep settings (administrator access required)."
+                errorDescription: "Unable to change lid close. Allow administrator access and try again."
             )
         }
     }
@@ -113,7 +113,7 @@ final class LidSleepService {
     private func installGrantAndRun(_ argumentSets: [[String]]) throws {
         let user = NSUserName()
         guard user.range(of: "^[A-Za-z0-9._-]+$", options: .regularExpression) != nil else {
-            throw LidSleepError(errorDescription: "Could not install administrator grant for this account.")
+            throw LidSleepError(errorDescription: "Unable to save administrator access for this account.")
         }
         let restore = Self.defaultRestoreMinutes
         let rule = "\(user) ALL=(root) NOPASSWD: /usr/bin/pmset -b sleep 0, /usr/bin/pmset -b sleep \(restore), /usr/bin/pmset -b disablesleep 0, /usr/bin/pmset -b disablesleep 1"
@@ -134,20 +134,20 @@ final class LidSleepService {
         let source = "do shell script \"\(escaped)\" with administrator privileges"
         var errorInfo: NSDictionary?
         guard let script = NSAppleScript(source: source) else {
-            throw LidSleepError(errorDescription: "Could not ask for administrator access.")
+            throw LidSleepError(errorDescription: "Unable to ask for administrator access.")
         }
         script.executeAndReturnError(&errorInfo)
         if let errorInfo {
             let number = errorInfo[NSAppleScript.errorNumber] as? Int ?? 0
             if number == -128 {
-                throw LidSleepError(errorDescription: "Administrator authorization was cancelled.")
+                throw LidSleepError(errorDescription: "Allow administrator access to ignore lid close.")
             }
             let message = (errorInfo[NSAppleScript.errorMessage] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             throw LidSleepError(
                 errorDescription: (message?.isEmpty == false)
                     ? message
-                    : "Could not change lid-sleep settings."
+                    : "Unable to change lid close."
             )
         }
     }

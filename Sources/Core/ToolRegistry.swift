@@ -7,9 +7,10 @@ final class ToolRegistry {
     let scroll = ScrollTool()
     let lid = LidTool()
     let awake = AwakeTool()
+    let menuBar = MenuBarTool()
 
     var toggles: [any ToggleTool] {
-        [keyboard, scroll, lid, awake]
+        [keyboard, scroll, lid, awake, menuBar]
     }
 
     func toggle(_ id: ToolID) -> any ToggleTool {
@@ -18,6 +19,7 @@ final class ToolRegistry {
         case .scroll: scroll
         case .lid: lid
         case .awake: awake
+        case .menuBar: menuBar
         case .machine, .battery, .network, .storage:
             preconditionFailure("\(id.rawValue) is informational")
         }

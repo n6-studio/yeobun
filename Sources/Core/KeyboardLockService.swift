@@ -54,7 +54,7 @@ final class KeyboardLockService {
             captureOutput: false
         )
         guard try mappingIsActive(matching: ids.matching) else {
-            throw KeyboardLockError(errorDescription: "hidutil accepted the mapping but it did not stick.")
+            throw KeyboardLockError(errorDescription: "Unable to lock the keyboard. Try again.")
         }
         if preserveExistingTimer { return }
         if let timeoutMinutes, timeoutMinutes > 0 {
@@ -192,7 +192,7 @@ final class KeyboardLockService {
             return ids
         }
         throw KeyboardLockError(
-            errorDescription: "No built-in keyboard found (device may still be re-enumerating after sleep — retry in a moment)."
+            errorDescription: "No built-in keyboard found. Try again in a moment."
         )
     }
 
@@ -282,7 +282,7 @@ final class KeyboardLockService {
         let err = String(data: errData, encoding: .utf8) ?? ""
         if process.terminationStatus != 0 {
             throw KeyboardLockError(
-                errorDescription: err.isEmpty ? "hidutil failed (\(process.terminationStatus))" : err
+                errorDescription: err.isEmpty ? "Unable to lock the keyboard." : err
             )
         }
         return out

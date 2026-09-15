@@ -10,11 +10,13 @@ final class MenuBarController: NSObject {
     private var eventMonitor: Any?
     private var displayRefreshWork: DispatchWorkItem?
     private var iconCancellables = Set<AnyCancellable>()
+    private var hider: MenuBarHider?
 
     init(model: AppModel) {
         self.model = model
         statusItem = Self.makeStatusItem()
         super.init()
+        model.openPanel = { [weak self] in self?.showPopover() }
 
         let host = NSHostingController(
             rootView: ToolsPanel()
@@ -30,6 +32,7 @@ final class MenuBarController: NSObject {
         configureStatusItem()
         observeDisplayChanges()
         observeActiveTools()
+        hider = MenuBarHider(model: model)
     }
 
     deinit {
@@ -67,27 +70,33 @@ final class MenuBarController: NSObject {
         menu.addItem(withTitle: "Open Yeobun", action: #selector(openFromMenu), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(toggleItem(
-            title: "Keyboard lock",
+            title: HomeTool.keyboard.title,
             action: #selector(toggleKeyboardFromMenu),
             isOn: model.keyboardLocked,
             isEnabled: !model.keyboardBusy
         ))
         menu.addItem(toggleItem(
-            title: "Reverse scroll",
+            title: HomeTool.scroll.title,
             action: #selector(toggleScrollFromMenu),
             isOn: model.scrollReverseEnabled,
             isEnabled: true
         ))
         menu.addItem(toggleItem(
-            title: "Stay awake",
+            title: HomeTool.lid.title,
             action: #selector(toggleLidFromMenu),
             isOn: model.lidSleepDisabled,
             isEnabled: !model.lidBusy
         ))
         menu.addItem(toggleItem(
-            title: "Prevent sleep",
+            title: HomeTool.awake.title,
             action: #selector(toggleAwakeFromMenu),
             isOn: model.awakeActive,
+            isEnabled: true
+        ))
+        menu.addItem(toggleItem(
+            title: HomeTool.menuBar.title,
+            action: #selector(toggleMenuBarFromMenu),
+            isOn: model.menuBarHideEnabled,
             isEnabled: true
         ))
         menu.addItem(.separator())
@@ -137,6 +146,10 @@ final class MenuBarController: NSObject {
 
     @objc private func toggleAwakeFromMenu() {
         model.toggleAwake()
+    }
+
+    @objc private func toggleMenuBarFromMenu() {
+        model.toggleMenuBarHide()
     }
 
     @objc private func quitFromMenu() {
@@ -205,12 +218,23 @@ final class MenuBarController: NSObject {
         guard let button = statusItem.button else { return }
         let mode = model.menuBarDisplay
         let tools = model.activeMenuBarTools
-        statusItem.length = MenuBarIcon.statusItemLength(mode: mode, tools: tools, statsText: model.menuBarStatsText)
+        let statsText = model.menuBarStatsText
+        let statsCaption = model.menuBarStats.caption
+        statusItem.length = MenuBarIcon.statusItemLength(mode: mode, tools: tools, statsText: statsText)
         button.image = nil
-        button.image = MenuBarIcon.makeImage(mode: mode, tools: tools, statsText: model.menuBarStatsText)
+        button.image = MenuBarIcon.makeImage(
+            mode: mode,
+            tools: tools,
+            statsText: statsText,
+            statsCaption: statsCaption
+        )
         button.imageScaling = .scaleNone
         button.imagePosition = .imageOnly
-        button.toolTip = MenuBarIcon.tooltip(tools: tools, statsText: model.menuBarStatsText)
+        button.toolTip = MenuBarIcon.tooltip(
+            tools: tools,
+            statsText: statsText,
+            statsCaption: statsCaption
+        )
     }
 
     private func observeActiveTools() {
@@ -220,6 +244,7 @@ final class MenuBarController: NSObject {
             model.$lidSleepDisabled,
             model.$awakeActive
         )
+        .combineLatest(model.$menuBarHideEnabled)
         .combineLatest(model.$menuBarDisplay)
         .combineLatest(model.$menuBarStats)
         .combineLatest(model.$stats)

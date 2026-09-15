@@ -4,6 +4,8 @@ macOS menu-bar app by N6 Studio. SwiftUI inside an AppKit `NSStatusItem` + `NSPo
 
 Agents should drive tools with the `yeobun` CLI (`yeobun --help`, `--json`), not by clicking the popover. GUI rules below apply only to the panel.
 
+Build with `./build.sh`. It picks the SDK that matches the running macOS when the Command Line Tools default to a newer beta SDK (a beta SwiftUI turns `@State` into a macro the CLT does not ship). Set `SDKROOT` to override.
+
 ## UI style — Control Center modules
 
 Mimic **macOS Control Center**. Stay on SwiftUI + AppKit. Do not add a third-party widget kit (MacControlCenterUI, web component libraries, etc.).
@@ -20,13 +22,14 @@ Mimic **macOS Control Center**. Stay on SwiftUI + AppKit. Do not add a third-par
 - Corner radius 16, inner padding 12 (`Radius.tile` / `tilePadding`).
 - **Off / informational:** `Color.primary.opacity(0.08)` fill, `.primary` content.
 - **On:** fill the whole tile with the module color, white content. The icon circle is a white 22% disk.
-- Keyboard: `Color.orange`
-- Scroll: `Color.accentColor`
-- Lid Sleep: `Color.purple`
-- Awake: `Color.brown`
+- Built-in keyboard: `Color.orange`
+- Scroll reverse: `Color.accentColor`
+- Lid awake: `Color.purple`
+- Keep awake: `Color.brown`
+- Hidden icons: `Color.teal`
 - This Mac: always informational (never an On fill). Show **CPU and RAM** on the tile.
 - Battery, Network, Storage: always informational. Battery warns when charge is low; Storage warns when the disk is full.
-- Status on toggle tiles is `On` / `Off` (keyboard lock On = locked). Awake shows remaining time when a duration is set.
+- Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Keep awake shows remaining time when a duration is set.
 - Hover: brighten the tile fill (`offFillHover`, or a white wash when On). Icon circles brighten and scale to `1.06`. Press: `scale(0.96)`, 150ms, `cubic-bezier(0.2, 0, 0, 1)`.
 - Icons: outline when off, fill when on; cross-fade (scale 0.25→1, opacity, blur 4→0). Sit in a 30pt circle (`Radius.glyph`). Off disk `primary.opacity(0.14)`; on disk white 22% over the module fill.
 

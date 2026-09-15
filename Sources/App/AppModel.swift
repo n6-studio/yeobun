@@ -6,7 +6,7 @@ import SwiftUI
 
 final class AppModel: ObservableObject {
     @Published var keyboardLocked = false
-    @Published var keyboardStatus = "Checking built-in keyboard…"
+    @Published var keyboardStatus = "Checking lock…"
     @Published var keyboardError: String?
     @Published var autoUnlockMinutes: Int {
         didSet { ToolStateStore.shared.update { $0.autoUnlockMinutes = autoUnlockMinutes } }
@@ -22,15 +22,15 @@ final class AppModel: ObservableObject {
     @Published var mouseNames: [String] = []
     @Published var mice: [MouseDevice] = []
     @Published var accessibilityTrusted = false
-    @Published var scrollStatus = "Mouse scroll is unchanged."
+    @Published var scrollStatus = "Follows System Settings"
 
     @Published var lidSleepDisabled = false
-    @Published var lidStatus = "Checking lid sleep…"
+    @Published var lidStatus = "Checking lid close…"
     @Published var lidError: String?
     @Published var lidBusy = false
 
     @Published var awakeActive = false
-    @Published var awakeStatus = "Mac can sleep as usual"
+    @Published var awakeStatus = "Sleeps on idle"
     @Published var awakeError: String?
     @Published var awakeRemainingSeconds: Int?
     @Published var awakeMinutes: Int {
@@ -42,6 +42,47 @@ final class AppModel: ObservableObject {
             }
         }
     }
+
+    @Published var menuBarHideEnabled = false
+    /// `true` while the icons left of the chevron are tucked away.
+    @Published var menuBarHidden = true
+    @Published var menuBarStatus = "Icons stay in the menu bar"
+    @Published var menuBarNotice: String?
+    @Published var menuBarStripIconSize: Int {
+        didSet {
+            guard menuBarStripIconSize != oldValue, !suppressMenuBarPersist else { return }
+            if menuBarStripIconSize == MenuBarTool.hiddenSize,
+               menuBarStripLabelSize == MenuBarTool.hiddenSize {
+                menuBarStripLabelSize = MenuBarTool.defaultLabelSize
+            }
+            tools.menuBar.setStripIconSize(menuBarStripIconSize)
+        }
+    }
+    @Published var menuBarStripLabelSize: Int {
+        didSet {
+            guard menuBarStripLabelSize != oldValue, !suppressMenuBarPersist else { return }
+            if menuBarStripLabelSize == MenuBarTool.hiddenSize,
+               menuBarStripIconSize == MenuBarTool.hiddenSize {
+                menuBarStripIconSize = MenuBarTool.defaultIconSize
+            }
+            tools.menuBar.setStripLabelSize(menuBarStripLabelSize)
+        }
+    }
+    @Published var menuBarStripLayout: MenuBarStripLayout {
+        didSet {
+            guard menuBarStripLayout != oldValue, !suppressMenuBarPersist else { return }
+            tools.menuBar.setStripLayout(menuBarStripLayout)
+        }
+    }
+    @Published var overflowStripOpen = false
+
+    /// Icons macOS pushed out of the bar, found on the last peek.
+    @Published var overflowItems: [OverflowItem] = []
+    @Published var overflowScanned = false
+    @Published var screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
+
+    /// Set by the status-item controller so the chevron's menu can open the panel.
+    var openPanel: (() -> Void)?
 
     @Published var loginItemNotice: String?
     @Published var statusCheckNotice: String?
@@ -77,6 +118,8 @@ final class AppModel: ObservableObject {
 
     let timeoutChoices = [0, 5, 10, 15, 30, 60]
     let awakeDurationChoices = [0, 5, 10, 15, 30, 60, 120, 300]
+    let menuBarStripIconSizeChoices = MenuBarTool.iconSizeChoices
+    let menuBarStripLabelSizeChoices = MenuBarTool.labelSizeChoices
 
     private let tools = ToolRegistry.shared
     private let keyboardQueue = DispatchQueue(label: "naf.tools.keyboard", qos: .userInitiated)
@@ -93,6 +136,9 @@ final class AppModel: ObservableObject {
     private var latestReleaseURL: URL?
     private var stateObserver: NSObjectProtocol?
     private var suppressAwakeRestart = false
+    private var suppressMenuBarPersist = false
+    private var overflowEpoch = 0
+    private let overflowQueue = DispatchQueue(label: "studio.n6.yeobun.overflow", qos: .userInitiated)
 
     private var panelWantsStats = false
 
@@ -118,6 +164,15 @@ final class AppModel: ObservableObject {
         awakeMinutes = [0, 5, 10, 15, 30, 60, 120, 300].contains(storedAwakeMinutes) ? storedAwakeMinutes : 0
         awakeActive = state.awakeEnabled
         keyboardLocked = state.keyboardLocked && Self.isCurrentBoot(state.keyboardLockBoot)
+        menuBarHideEnabled = state.menuBarHideEnabled
+        menuBarHidden = state.menuBarHidden
+        let sizes = MenuBarTool.resolvedSizes(
+            icon: state.menuBarStripIconSize,
+            label: state.menuBarStripLabelSize
+        )
+        menuBarStripIconSize = sizes.icon
+        menuBarStripLabelSize = sizes.label
+        menuBarStripLayout = state.menuBarStripLayout
         if defaults.object(forKey: Keys.launchAtLogin) == nil {
             launchAtLogin = true
             defaults.set(true, forKey: Keys.launchAtLogin)
@@ -232,6 +287,7 @@ final class AppModel: ObservableObject {
         if scrollReverseEnabled { tools.append(.scroll) }
         if lidSleepDisabled { tools.append(.lid) }
         if awakeActive { tools.append(.awake) }
+        if menuBarHideEnabled { tools.append(.menuBar) }
         return tools
     }
 
@@ -490,6 +546,159 @@ final class AppModel: ObservableObject {
         setScrollReverseEnabled(!scrollReverseEnabled)
     }
 
+    // MARK: - Menu bar
+
+    var menuBarTileStatus: String {
+        if !menuBarHideEnabled { return "Off" }
+        return "On"
+    }
+
+    static func menuBarIconSizeLabel(_ points: Int) -> String {
+        switch points {
+        case MenuBarTool.hiddenSize: return "None"
+        case 20: return "Small"
+        case 32: return "Large"
+        default: return "Medium"
+        }
+    }
+
+    static func menuBarLabelSizeLabel(_ points: Int) -> String {
+        switch points {
+        case MenuBarTool.hiddenSize: return "None"
+        case 9: return "Small"
+        case 13: return "Large"
+        default: return "Medium"
+        }
+    }
+
+    func toggleMenuBarHide() {
+        setMenuBarHideEnabled(!menuBarHideEnabled)
+    }
+
+    func setMenuBarHideEnabled(_ enabled: Bool) {
+        guard enabled != menuBarHideEnabled else { return }
+        menuBarNotice = nil
+        menuBarHideEnabled = enabled
+        if enabled {
+            menuBarHidden = true
+        }
+        try? tools.menuBar.setEnabled(enabled, options: ToolOptions())
+        clearOverflow()
+        updateMenuBarStatus()
+    }
+
+    /// Left click on the chevron always opens or closes the strip.
+    func chevronClicked() {
+        toggleOverflowStrip()
+    }
+
+    // MARK: Icons not in the bar
+
+    func toggleOverflowStrip() {
+        if overflowStripOpen {
+            closeOverflowStrip()
+        } else {
+            openOverflowStrip()
+        }
+    }
+
+    func openOverflowStrip() {
+        guard menuBarHideEnabled else { return }
+        overflowStripOpen = true
+        overflowScanned = false
+        scanOverflow()
+    }
+
+    func closeOverflowStrip() {
+        guard overflowStripOpen else { return }
+        overflowStripOpen = false
+        clearOverflow()
+    }
+
+    func scanOverflow() {
+        guard menuBarHideEnabled, overflowStripOpen else { return }
+        overflowEpoch += 1
+        let epoch = overflowEpoch
+        screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
+        overflowQueue.async { [weak self] in
+            let windows = MenuBarOverflow.hiddenByMacOS()
+            let identified = MenuBarOverflowResolver.identify(windows: windows)
+            DispatchQueue.main.async {
+                guard let self, epoch == self.overflowEpoch else { return }
+                self.overflowItems = identified
+                self.overflowScanned = true
+            }
+            guard MenuBarOverflowResolver.screenRecordingGranted, !identified.isEmpty else { return }
+            Task { [weak self] in
+                let captured = await MenuBarOverflowResolver.capture(identified)
+                await MainActor.run { [weak self] in
+                    guard let self, epoch == self.overflowEpoch else { return }
+                    self.overflowItems = captured
+                }
+            }
+        }
+    }
+
+    private func clearOverflow() {
+        overflowEpoch += 1
+        overflowItems = []
+        overflowScanned = false
+    }
+
+    /// Press the real item. Falls back to bringing its app forward.
+    func activateOverflowItem(_ item: OverflowItem) {
+        if MenuBarOverflowResolver.press(item) { return }
+        if let name = item.appName,
+           let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) {
+            app.activate()
+        }
+    }
+
+    func requestScreenRecording() {
+        MenuBarOverflowResolver.requestScreenRecording()
+        MenuBarOverflowResolver.openScreenRecordingSettings()
+        screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
+    }
+
+    /// Called by the status items after they measure themselves.
+    func noteMenuBarLayout(valid: Bool) {
+        let notice = valid ? nil : "⌘-drag the chevron to the right of the hidden icons"
+        if notice != menuBarNotice {
+            menuBarNotice = notice
+        }
+        updateMenuBarStatus()
+    }
+
+    func requestOpenPanel() {
+        openPanel?()
+    }
+
+    private func refreshMenuBarStatus() {
+        let snapshot = tools.menuBar.hardwareSnapshot()
+        suppressMenuBarPersist = true
+        menuBarHideEnabled = snapshot.enabled
+        menuBarHidden = snapshot.hidden
+        let sizes = MenuBarTool.resolvedSizes(icon: snapshot.iconSize, label: snapshot.labelSize)
+        menuBarStripIconSize = sizes.icon
+        menuBarStripLabelSize = sizes.label
+        menuBarStripLayout = snapshot.layout
+        suppressMenuBarPersist = false
+        if !menuBarHideEnabled {
+            closeOverflowStrip()
+        }
+        updateMenuBarStatus()
+    }
+
+    private func updateMenuBarStatus() {
+        if !menuBarHideEnabled {
+            menuBarStatus = "Icons stay in the menu bar"
+        } else if menuBarNotice != nil {
+            menuBarStatus = "Chevron is on the wrong side"
+        } else {
+            menuBarStatus = "Hidden icons sit left of the chevron"
+        }
+    }
+
     func setScrollReverseEnabled(_ enabled: Bool) {
         guard enabled != scrollReverseEnabled else { return }
         scrollReverseEnabled = enabled
@@ -511,7 +720,7 @@ final class AppModel: ObservableObject {
         keyboardError = nil
         keyboardLocked = locked
         keyboardBusy = true
-        keyboardStatus = locked ? "Locking built-in keyboard…" : "Unlocking built-in keyboard…"
+        keyboardStatus = locked ? "Locking keyboard…" : "Unlocking keyboard…"
         keyboardEpoch += 1
         let epoch = keyboardEpoch
         keyboardQueue.async { [weak self] in
@@ -597,12 +806,12 @@ final class AppModel: ObservableObject {
         }
         if snapshot.locked {
             if let remaining = snapshot.remainingMinutes {
-                keyboardStatus = "Built-in keys ignored · auto-unlock in \(remaining) min"
+                keyboardStatus = "Locked · unlocks in \(remaining) min"
             } else {
-                keyboardStatus = "Built-in keys ignored until you unlock or reboot"
+                keyboardStatus = "Locked until you unlock or restart"
             }
         } else {
-            keyboardStatus = "Built-in keyboard is live"
+            keyboardStatus = "Unlocked"
         }
     }
 
@@ -611,7 +820,7 @@ final class AppModel: ObservableObject {
         lidError = nil
         lidSleepDisabled = disabled
         lidBusy = true
-        lidStatus = disabled ? "Keeping the Mac awake…" : "Restoring lid sleep…"
+        lidStatus = disabled ? "Ignoring lid close…" : "Allowing lid sleep…"
         lidEpoch += 1
         let epoch = lidEpoch
         lidQueue.async { [weak self] in
@@ -652,9 +861,9 @@ final class AppModel: ObservableObject {
     private func applyLidSnapshot(_ snapshot: LidSleepService.Snapshot) {
         lidSleepDisabled = snapshot.disabled
         if snapshot.disabled {
-            lidStatus = "Battery stays awake with the lid closed"
+            lidStatus = "Stays on with the lid closed"
         } else {
-            lidStatus = "Battery sleeps when the lid closes"
+            lidStatus = "Sleeps when the lid closes"
         }
     }
 
@@ -729,6 +938,7 @@ final class AppModel: ObservableObject {
         refreshLidStatus()
         restoreAwakeIfNeeded()
         refreshScrollReverseState()
+        refreshMenuBarStatus()
     }
 
     /// Read each tool from the Mac and restore anything that dropped.
@@ -743,7 +953,7 @@ final class AppModel: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             guard let self else { return }
             self.statusCheckBusy = false
-            self.statusCheckNotice = "Updated from this Mac"
+            self.statusCheckNotice = "Status updated"
         }
     }
 
@@ -769,9 +979,9 @@ final class AppModel: ObservableObject {
                         self.newerVersion = release.version
                         self.updateCheckNotice = "\(release.version) is available"
                     case .orderedSame:
-                        self.updateCheckNotice = "You're on the latest version"
+                        self.updateCheckNotice = "Up to date"
                     case .orderedAscending:
-                        self.updateCheckNotice = "This build is ahead of GitHub"
+                        self.updateCheckNotice = "This build is newer than the latest release"
                     }
                 case .failure(let error):
                     self.updateCheckNotice = error.localizedDescription
@@ -809,7 +1019,7 @@ final class AppModel: ObservableObject {
     private func reapplyKeyboardLock() {
         keyboardError = nil
         keyboardBusy = true
-        keyboardStatus = "Re-applying keyboard lock…"
+        keyboardStatus = "Locking keyboard…"
         keyboardEpoch += 1
         let epoch = keyboardEpoch
         keyboardQueue.async { [weak self] in
@@ -870,7 +1080,7 @@ final class AppModel: ObservableObject {
         try? tools.awake.setEnabled(false, options: ToolOptions())
         awakeActive = false
         awakeRemainingSeconds = nil
-        awakeStatus = "Mac can sleep as usual"
+        awakeStatus = "Sleeps on idle"
     }
 
     private func handleAwakeExpired() {
@@ -878,7 +1088,7 @@ final class AppModel: ObservableObject {
         tools.awake.noteExpired()
         awakeActive = false
         awakeRemainingSeconds = nil
-        awakeStatus = "Mac can sleep as usual"
+        awakeStatus = "Sleeps on idle"
     }
 
     private func restoreAwakeIfNeeded() {
@@ -891,7 +1101,7 @@ final class AppModel: ObservableObject {
             stopAwakeTick()
             awakeActive = false
             awakeRemainingSeconds = nil
-            awakeStatus = "Mac can sleep as usual"
+            awakeStatus = "Sleeps on idle"
         }
     }
 
@@ -900,12 +1110,12 @@ final class AppModel: ObservableObject {
         awakeRemainingSeconds = snapshot.remainingSeconds
         if snapshot.active {
             if let remaining = snapshot.remainingSeconds {
-                awakeStatus = "Staying awake · \(Self.formatAwakeRemaining(remaining, compact: false)) left"
+                awakeStatus = "Won't sleep · \(Self.formatAwakeRemaining(remaining, compact: false)) left"
             } else {
-                awakeStatus = "Staying awake until you turn it off"
+                awakeStatus = "Won't sleep until you turn it off"
             }
         } else {
-            awakeStatus = "Mac can sleep as usual"
+            awakeStatus = "Sleeps on idle"
         }
     }
 
@@ -966,6 +1176,10 @@ final class AppModel: ObservableObject {
     }
 
     func refreshAccessibility() {
+        let recording = MenuBarOverflowResolver.screenRecordingGranted
+        if recording != screenRecordingGranted {
+            screenRecordingGranted = recording
+        }
         let trusted = AccessibilityAuth.hasPermission || ScrollHelperController.shared.isRunning
         let changed = trusted != accessibilityTrusted
         accessibilityTrusted = trusted
@@ -978,23 +1192,23 @@ final class AppModel: ObservableObject {
 
     private func updateScrollStatus() {
         if mice.isEmpty {
-            scrollStatus = "No mouse connected"
+            scrollStatus = "Connect a mouse to reverse its wheel"
             return
         }
         if !scrollReverseEnabled {
-            scrollStatus = "Mouse scroll follows System Settings"
+            scrollStatus = "Follows System Settings"
             return
         }
         if !mice.contains(where: { isScrollReverseOn(for: $0.id) }) {
-            scrollStatus = "No mouse set to reverse"
+            scrollStatus = "No mouse selected"
             return
         }
         if ScrollHelperController.shared.isRunning {
-            scrollStatus = "Trackpad stays natural"
+            scrollStatus = "Mouse wheel is reversed"
         } else if !accessibilityTrusted {
-            scrollStatus = "Needs Accessibility permission to reverse the wheel."
+            scrollStatus = "Allow Accessibility to reverse scroll"
         } else {
-            scrollStatus = "Could not start scroll reverse. Toggle Yeobun off and on in Accessibility, then reopen the app."
+            scrollStatus = "Unable to reverse scroll. Turn Yeobun off and on in Accessibility, then reopen Yeobun."
         }
     }
 
@@ -1015,6 +1229,7 @@ final class AppModel: ObservableObject {
         restoreAwakeIfNeeded()
         refreshScrollReverseState()
         refreshAccessibility()
+        refreshMenuBarStatus()
     }
 
     private func applyLaunchAtLogin() {
@@ -1027,7 +1242,7 @@ final class AppModel: ObservableObject {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            loginItemNotice = "Could not update login item: \(error.localizedDescription)"
+            loginItemNotice = "Unable to update Open at login"
         }
     }
 }

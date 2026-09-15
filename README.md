@@ -8,7 +8,7 @@
 
 <p align="center">
   <strong>A Control Center–style panel in the menu bar for the extras macOS did not ship. No Dock icon.</strong><br>
-  Lock the built-in keyboard. Reverse mouse scroll. Stay awake with the lid closed. Prevent idle sleep. Glance at this Mac.
+  Lock the built-in keyboard. Reverse mouse scroll. Stay on with the lid closed. Keep the Mac awake. Hide menu bar icons behind a chevron. Glance at this Mac.
 </p>
 
 <p align="center"><em>Yeobun</em> is from Korean <strong>여분</strong>: spare, extra.</p>
@@ -52,43 +52,57 @@ Requires macOS 14 or later.
 
 Active tiles fill with their color.
 
-### Keyboard
+### Built-in keyboard
 
 <p align="center">
-  <img src="docs/screenshots/keyboard.png" width="320" alt="Keyboard lock detail">
+  <img src="docs/screenshots/keyboard.png" width="320" alt="Built-in keyboard detail">
 </p>
 
-Disables the MacBook’s **built-in keyboard**. The trackpad, any external keyboard, Touch ID, and the power button keep working. A reboot always unlocks the keys.
+Disables the MacBook's **built-in keyboard**. The trackpad, any external keyboard, Touch ID, and the power button keep working. A reboot always unlocks the keys.
 
-Optional **auto-unlock** after 5–60 minutes is for wiping the keyboard down. **Lights off** dims the backlight while it is locked.
+Optional **Unlock after** (5–60 minutes) is for wiping the keyboard down. **Dim while locked** turns the backlight off while the keys are ignored.
 
-### Scroll
+### Scroll reverse
 
 <p align="center">
   <img src="docs/screenshots/scroll.png" width="320" alt="Scroll reverse detail">
 </p>
 
-Reverses **mouse wheel** scrolling so a mouse feels classic while the **trackpad stays natural**. Each mouse can be switched on its own. Needs Accessibility permission; the panel will ask if it is missing.
+Reverses **mouse wheel** scrolling so a mouse feels classic while the **trackpad stays natural**. Each mouse can be switched on its own. Needs Accessibility; the panel will ask if it is missing.
 
-### Lid Sleep
+### Lid awake
 
 <p align="center">
-  <img src="docs/screenshots/lid.png" width="320" alt="Lid Sleep detail">
+  <img src="docs/screenshots/lid.png" width="320" alt="Lid awake detail">
 </p>
 
-Keeps the Mac awake on **battery** when the lid is closed. The first toggle asks for an administrator password once; later switches do not. The setting stays until you turn it off — quitting the app does not restore sleep.
+Keeps the Mac on **battery** when the lid is shut. The first toggle asks for an administrator password once; later switches do not. The setting stays until you turn it off — quitting the app does not restore sleep.
 
 A closed MacBook with nowhere to dump heat can get hot. Switch it off when you are done.
 
-### Awake
+### Keep awake
 
 <p align="center">
-  <img src="docs/screenshots/awake.png" width="320" alt="Awake detail with remaining time">
+  <img src="docs/screenshots/awake.png" width="320" alt="Keep awake detail with remaining time">
 </p>
 
-Prevents idle sleep and display sleep. Turn it on indefinitely, or pick a duration first (5 minutes through 5 hours). The tile shows time left. Quitting the app does not drop the hold.
+Blocks idle sleep and display sleep. Turn it on indefinitely, or pick a duration first (5 minutes through 5 hours). The tile shows time left. Quitting the app does not drop the hold.
 
-Lid Sleep is the closed-lid case. Awake only blocks idle sleep while the lid is open.
+Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the lid is open.
+
+### Hidden icons
+
+<p align="center">
+  <img src="docs/screenshots/menubar.png" width="320" alt="Hidden icons detail">
+</p>
+
+A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). Click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
+
+⌘-drag icons to the left of the chevron and they leave the bar; they stay one chevron click away. **Layout** is a grid or a vertical list. **Icon size** and **Name size** set how those tiles draw.
+
+Finding the icons needs **Accessibility**: on macOS 26 off-screen items are not in the window list, so Yeobun asks each app for its own menu bar extras. **Screen Recording** is optional and draws each app's real icon instead of a generic one.
+
+If the chevron ends up on the wrong side of the hidden icons, they stay shown and the tile tells you to ⌘-drag it back to the right.
 
 ## Stats
 
@@ -104,7 +118,7 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 </p>
 
 - **This Mac** — live CPU and RAM on the tile; detail adds pressure, swap, thermal state, uptime, and the top processes.
-- **Battery** — charge, time remaining, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “Desktop”.
+- **Battery** — charge, time remaining, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
 - **Network** — link type, Wi-Fi name when macOS allows it, local IP, live down/up.
 - **Storage** — used and free space on the boot volume, plus other mounted disks.
 
@@ -116,8 +130,8 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 
 - **Open at login** — keep Yeobun in the menu bar (on by default).
 - **Menu bar** — logo only, icons for tools that are on, or both. The logo stays when nothing is on, so you can still find the app.
-- **Menu bar stats** — optional CPU, battery, or network next to the logo.
-- **Check status** — re-read each tool from this Mac and restore anything that dropped.
+- **Menu bar stats** — optional CPU, battery, or network next to the logo, with a small label above the value.
+- **Check status** — read each tool from this Mac and restore anything that dropped.
 
 Right-click the menu-bar item for the same toggles without opening the panel.
 
@@ -131,6 +145,7 @@ yeobun keyboard on --minutes 15
 yeobun scroll on
 yeobun lid off
 yeobun awake on --minutes 60
+yeobun menubar on
 yeobun mac
 ```
 
@@ -145,7 +160,7 @@ open ~/Applications/Yeobun.app
 
 ## Notes
 
-- Keyboard lock and Awake need no extra permission.
+- Built-in keyboard and Keep awake need no extra permission.
 - Scroll reverse needs Accessibility.
-- Lid Sleep asks for an administrator password once.
-- Keyboard lock lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Awake keep running after Quit until you turn them off. Lid Sleep stays until you turn it off.
+- Lid awake asks for an administrator password once.
+- Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

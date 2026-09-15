@@ -12,6 +12,18 @@ CLI_BIN="yeobun-cli"
 BUILD="$ROOT/build"
 APP="$BUILD/${APP_NAME}.app"
 SDK="$(xcrun --show-sdk-path)"
+# A freshly updated Command Line Tools can default to a beta SDK newer than
+# the host OS. Its SwiftUI turns `@State` into a macro the CLT does not ship,
+# so prefer the SDK that matches the running macOS. SDKROOT still wins.
+if [[ -z "${SDKROOT:-}" ]]; then
+  HOST_MAJOR="$(sw_vers -productVersion | cut -d. -f1)"
+  SDK_MAJOR="$(xcrun --show-sdk-version | cut -d. -f1)"
+  SDK_DIR="$(dirname "$SDK")"
+  if [[ "$SDK_MAJOR" -gt "$HOST_MAJOR" && -d "$SDK_DIR/MacOSX${HOST_MAJOR}.sdk" ]]; then
+    SDK="$SDK_DIR/MacOSX${HOST_MAJOR}.sdk"
+    echo "→ using $(basename "$(readlink "$SDK" || echo "$SDK")") instead of the newer beta SDK"
+  fi
+fi
 DEST="$HOME/Applications/${APP_NAME}.app"
 SIGN_CN="Yeobun Signing"
 SKIP_INSTALL=0
@@ -109,6 +121,7 @@ echo "→ compile app"
 swiftc "${SWIFTC_COMMON[@]}" \
   -framework SwiftUI \
   -framework ServiceManagement \
+  -framework ScreenCaptureKit \
   -o "$APP/Contents/MacOS/$EXEC" \
   "${CORE_SOURCES[@]}" "${APP_SOURCES[@]}"
 

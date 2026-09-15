@@ -20,7 +20,7 @@ struct ScrollHelperMain {
         devices.start()
 
         guard ScrollReverseService.shared.start() else {
-            fputs("yeobun-scroll: Accessibility permission is required.\n", stderr)
+            fputs("yeobun-scroll: Allow Yeobun in Accessibility.\n", stderr)
             store.update { $0.scrollHelperPID = 0 }
             exit(3)
         }

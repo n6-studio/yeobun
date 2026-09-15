@@ -82,6 +82,8 @@ struct ToolsPanel: View {
             LidDetail()
         case .awake:
             AwakeDetail()
+        case .menuBar:
+            MenuBarDetail()
         case .machine:
             MachineDetail()
         case .battery:
@@ -149,9 +151,7 @@ private struct HomeGrid: View {
                 }
             }
         }
-        .animation(reduceMotion ? nil : Motion.enter, value: model.tabHiddenHomeTools)
         .animation(reduceMotion ? nil : Motion.enter, value: presentation.isEditingHome)
-        .animation(reduceMotion ? nil : Motion.enter, value: model.homeTab)
         .onChange(of: presentation.isEditingHome) { _, editing in
             if !editing {
                 cancelDrag()
@@ -159,7 +159,6 @@ private struct HomeGrid: View {
         }
         .onChange(of: model.homeTab) { _, _ in
             cancelDrag()
-            presentation.generation += 1
         }
     }
 
@@ -278,6 +277,17 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleAwake() },
                 action: { presentation.open(.awake) }
             )
+        case .menuBar:
+            ToolTile(
+                title: tool.title,
+                status: model.menuBarTileStatus,
+                isOn: model.menuBarHideEnabled,
+                outline: tool.outline,
+                fill: tool.fill,
+                accent: tool.accent,
+                onToggle: { model.toggleMenuBarHide() },
+                action: { presentation.open(.menuBar) }
+            )
         case .machine:
             InfoStatsTile(
                 title: tool.title,
@@ -298,7 +308,7 @@ private struct HomeGrid: View {
                 route: .battery,
                 lines: [
                     InfoMetric(label: "Charge", value: model.batteryPercentLabel, level: model.batteryUsageLevel),
-                    InfoMetric(label: "Status", value: model.stats.battery == nil ? "Desktop" : compactBatteryStatus, level: .normal)
+                    InfoMetric(label: "Status", value: compactBatteryStatus, level: .normal)
                 ],
                 accessibilityValue: "\(model.batteryPercentLabel), \(model.batteryStatusLabel)"
             )
@@ -330,7 +340,7 @@ private struct HomeGrid: View {
     }
 
     private var compactBatteryStatus: String {
-        guard let battery = model.stats.battery else { return "Desktop" }
+        guard let battery = model.stats.battery else { return "No battery" }
         if battery.isFull { return "Full" }
         if battery.isCharging { return "Charging" }
         if let minutes = battery.minutesToEmpty {
@@ -458,37 +468,84 @@ private struct HomeGrid: View {
 private struct HomeTabBar: View {
     @Binding var selection: HomeTab
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pillProgress: CGFloat = 0
+
+    private let spacing: CGFloat = 3
+    private let inset: CGFloat = 3
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(HomeTab.allCases) { tab in
-                let selected = selection == tab
-                Button {
-                    selection = tab
-                } label: {
-                    Text(tab.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(selected ? Color.primary : Color.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
-                        .background {
-                            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(selected ? ModuleColor.glyphOffFill : Color.clear)
-                        }
-                }
-                .buttonStyle(PressScaleButtonStyle())
-                .accessibilityLabel(tab.title)
-                .accessibilityAddTraits(selected ? [.isSelected] : [])
-            }
-        }
-        .padding(3)
-        .background(
+        ZStack {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .fill(ModuleColor.groupFill)
-        )
-        .animation(reduceMotion ? nil : Motion.press, value: selection)
+            HomeTabPill(progress: pillProgress, spacing: spacing, inset: inset)
+            HStack(spacing: spacing) {
+                ForEach(HomeTab.allCases) { tab in
+                    let selected = selection == tab
+                    Button {
+                        var snap = Transaction()
+                        snap.disablesAnimations = true
+                        withTransaction(snap) {
+                            selection = tab
+                        }
+                    } label: {
+                        Text(tab.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(selected ? Color.primary : Color.secondary)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressScaleButtonStyle())
+                    .frame(maxWidth: .infinity)
+                    .accessibilityLabel(tab.title)
+                    .accessibilityAddTraits(selected ? [.isSelected] : [])
+                }
+            }
+            .padding(inset)
+        }
+        .frame(height: 32)
+        .onAppear {
+            pillProgress = progress(for: selection)
+        }
+        .onChange(of: selection) { _, tab in
+            withAnimation(reduceMotion ? nil : Motion.press) {
+                pillProgress = progress(for: tab)
+            }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Home")
+    }
+
+    private func progress(for tab: HomeTab) -> CGFloat {
+        CGFloat(HomeTab.allCases.firstIndex(of: tab) ?? 0)
+    }
+}
+
+/// Draws the selected-tab pill. `progress` is the only animatable value, so it
+/// can only move horizontally even when the panel height changes.
+private struct HomeTabPill: View, Animatable {
+    var progress: CGFloat
+    var spacing: CGFloat
+    var inset: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var body: some View {
+        Canvas { context, size in
+            let tabs = CGFloat(HomeTab.allCases.count)
+            let innerWidth = size.width - inset * 2
+            let innerHeight = size.height - inset * 2
+            let width = (innerWidth - spacing * (tabs - 1)) / max(tabs, 1)
+            let x = inset + progress * (width + spacing)
+            let rect = CGRect(x: x, y: inset, width: width, height: innerHeight)
+            context.fill(
+                Path(roundedRect: rect, cornerRadius: 10),
+                with: .color(ModuleColor.glyphOffFill)
+            )
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -573,6 +630,7 @@ private struct ToolTile: View {
                     Spacer(minLength: 6)
                     Text(title)
                         .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(2)
                     Group {
                         if isBusy {
                             ProgressView()
@@ -727,7 +785,7 @@ private struct KeyboardDetail: View {
                 .foregroundStyle(model.keyboardLocked ? ModuleColor.keyboard : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Built-in keyboard")
+                    Text(HomeTool.keyboard.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.keyboardStatus)
                         .font(.system(size: 11))
@@ -739,10 +797,10 @@ private struct KeyboardDetail: View {
                     if model.keyboardBusy {
                         ProgressView()
                             .controlSize(.small)
-                            .accessibilityLabel(model.keyboardLocked ? "Locking" : "Unlocking")
+                            .accessibilityLabel(model.keyboardLocked ? "Locking keyboard" : "Unlocking keyboard")
                     }
                     Toggle(
-                        "Keyboard lock",
+                        HomeTool.keyboard.title,
                         isOn: Binding(
                             get: { model.keyboardLocked },
                             set: { model.setKeyboardLocked($0) }
@@ -760,11 +818,11 @@ private struct KeyboardDetail: View {
             Divider()
 
             HStack {
-                Text("Auto-unlock")
+                Text("Unlock after")
                     .font(.system(size: 13))
                 Spacer()
-                Picker("Auto-unlock", selection: $model.autoUnlockMinutes) {
-                    Text("Off").tag(0)
+                Picker("Unlock after", selection: $model.autoUnlockMinutes) {
+                    Text("Never").tag(0)
                     ForEach(model.timeoutChoices.filter { $0 > 0 }, id: \.self) { minutes in
                         Text("\(minutes) min").tag(minutes)
                     }
@@ -777,11 +835,11 @@ private struct KeyboardDetail: View {
             .stagger(index: 1, generation: presentation.generation)
 
             HStack {
-                Text("Lights off")
+                Text("Dim while locked")
                     .font(.system(size: 13))
                 Spacer()
                 Toggle(
-                    "Lights off",
+                    "Dim while locked",
                     isOn: Binding(
                         get: { model.dimKeyboardWhenLocked },
                         set: { model.setDimKeyboardWhenLocked($0) }
@@ -827,7 +885,7 @@ private struct ScrollDetail: View {
                 .foregroundStyle(model.scrollReverseEnabled ? ModuleColor.scroll : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Mouse scroll")
+                    Text(HomeTool.scroll.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.scrollStatus)
                         .font(.system(size: 11))
@@ -836,7 +894,7 @@ private struct ScrollDetail: View {
                 }
                 Spacer(minLength: 8)
                 Toggle(
-                    "Mouse scroll",
+                    HomeTool.scroll.title,
                     isOn: Binding(
                         get: { model.scrollReverseEnabled },
                         set: { model.setScrollReverseEnabled($0) }
@@ -851,23 +909,18 @@ private struct ScrollDetail: View {
             Divider()
 
             if model.mice.isEmpty {
-                Text("No mouse connected")
+                Text("Connect a mouse to reverse its wheel")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .stagger(index: 1, generation: presentation.generation)
             } else {
                 ForEach(Array(model.mice.enumerated()), id: \.element.id) { index, mouse in
                     HStack {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(mouse.name)
-                                .font(.system(size: 13))
-                                .lineLimit(1)
-                            Text("Reverse scroll")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
+                        Text(mouse.name)
+                            .font(.system(size: 13))
+                            .lineLimit(1)
                         Spacer(minLength: 8)
-                        Toggle("Reverse scroll", isOn: model.scrollReverseBinding(for: mouse.id))
+                        Toggle("Reverse \(mouse.name)", isOn: model.scrollReverseBinding(for: mouse.id))
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
@@ -879,7 +932,7 @@ private struct ScrollDetail: View {
             if model.scrollReverseEnabled
                 && !model.accessibilityTrusted
                 && model.mice.contains(where: { model.isScrollReverseOn(for: $0.id) }) {
-                Button("Allow Settings") {
+                Button("Allow Accessibility") {
                     AccessibilityAuth.requestIfNeeded()
                     model.openAccessibilitySettings()
                     model.refreshAccessibility()
@@ -905,7 +958,7 @@ private struct LidDetail: View {
                 .foregroundStyle(model.lidSleepDisabled ? ModuleColor.lid : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Stay awake")
+                    Text(HomeTool.lid.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.lidStatus)
                         .font(.system(size: 11))
@@ -917,10 +970,10 @@ private struct LidDetail: View {
                     if model.lidBusy {
                         ProgressView()
                             .controlSize(.small)
-                            .accessibilityLabel(model.lidSleepDisabled ? "Turning on" : "Turning off")
+                            .accessibilityLabel(model.lidSleepDisabled ? "Turning \(HomeTool.lid.title) on" : "Turning \(HomeTool.lid.title) off")
                     }
                     Toggle(
-                        "Stay awake",
+                        HomeTool.lid.title,
                         isOn: Binding(
                             get: { model.lidSleepDisabled },
                             set: { model.setLidSleepDisabled($0) }
@@ -960,7 +1013,7 @@ private struct AwakeDetail: View {
                 .foregroundStyle(model.awakeActive ? ModuleColor.awake : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Prevent sleep")
+                    Text(HomeTool.awake.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.awakeStatus)
                         .font(.system(size: 11))
@@ -969,7 +1022,7 @@ private struct AwakeDetail: View {
                 }
                 Spacer(minLength: 8)
                 Toggle(
-                    "Prevent sleep",
+                    HomeTool.awake.title,
                     isOn: Binding(
                         get: { model.awakeActive },
                         set: { model.setAwakeActive($0) }
@@ -984,10 +1037,10 @@ private struct AwakeDetail: View {
             Divider()
 
             HStack {
-                Text("Activate for")
+                Text("Duration")
                     .font(.system(size: 13))
                 Spacer()
-                Picker("Activate for", selection: $model.awakeMinutes) {
+                Picker("Duration", selection: $model.awakeMinutes) {
                     ForEach(model.awakeDurationChoices, id: \.self) { minutes in
                         Text(AppModel.awakeDurationLabel(minutes)).tag(minutes)
                     }
@@ -1003,6 +1056,149 @@ private struct AwakeDetail: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+private struct MenuBarDetail: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var presentation: PanelPresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GroupedPanel {
+                HStack(alignment: .center, spacing: 10) {
+                    StateSymbol(
+                        outline: HomeTool.menuBar.outline,
+                        fill: HomeTool.menuBar.fill,
+                        isActive: model.menuBarHideEnabled
+                    )
+                    .foregroundStyle(model.menuBarHideEnabled ? ModuleColor.menuBar : .primary)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(HomeTool.menuBar.title)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(model.menuBarStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle(
+                        HomeTool.menuBar.title,
+                        isOn: Binding(
+                            get: { model.menuBarHideEnabled },
+                            set: { model.setMenuBarHideEnabled($0) }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                }
+                .stagger(index: 0, generation: presentation.generation)
+
+                Divider()
+
+                HStack {
+                    Text("Layout")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Picker("Layout", selection: $model.menuBarStripLayout) {
+                        ForEach(MenuBarStripLayout.allCases) { layout in
+                            Text(layout.title).tag(layout)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+                .stagger(index: 1, generation: presentation.generation)
+
+                HStack {
+                    Text("Icon size")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Picker("Icon size", selection: $model.menuBarStripIconSize) {
+                        ForEach(model.menuBarStripIconSizeChoices, id: \.self) { size in
+                            Text(AppModel.menuBarIconSizeLabel(size)).tag(size)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+                .stagger(index: 2, generation: presentation.generation)
+
+                HStack {
+                    Text("Name size")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Picker("Name size", selection: $model.menuBarStripLabelSize) {
+                        ForEach(model.menuBarStripLabelSizeChoices, id: \.self) { size in
+                            Text(AppModel.menuBarLabelSizeLabel(size)).tag(size)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+                .stagger(index: 3, generation: presentation.generation)
+
+                if let notice = model.menuBarNotice {
+                    Text(notice)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            GroupedPanel {
+                Text("⌘-drag icons left of the chevron to hide them. Click the chevron to show them.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .stagger(index: 4, generation: presentation.generation)
+
+            if !model.screenRecordingGranted || !model.accessibilityTrusted {
+                GroupedPanel {
+                    if !model.screenRecordingGranted {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Screen Recording")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Use each app's real icon")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Allow") {
+                                model.requestScreenRecording()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    if !model.accessibilityTrusted {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("Accessibility")
+                                    .font(.system(size: 13, weight: .semibold))
+                                Text("Name hidden icons and open their menus")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Allow") {
+                                AccessibilityAuth.requestIfNeeded()
+                                model.openAccessibilitySettings()
+                                model.refreshAccessibility()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .stagger(index: 5, generation: presentation.generation)
             }
         }
     }
@@ -1050,7 +1246,7 @@ private struct MachineDetail: View {
                 StatRow(label: "Thermal", value: StatsFormat.thermal(model.stats.thermal), level: model.thermalLevel)
                     .stagger(index: 5, generation: presentation.generation)
 
-                StatRow(label: "Up", value: StatsFormat.uptime(model.stats.uptimeSeconds))
+                StatRow(label: "Uptime", value: StatsFormat.uptime(model.stats.uptimeSeconds))
                     .stagger(index: 6, generation: presentation.generation)
             }
 
@@ -1170,7 +1366,7 @@ private struct StorageDetail: View {
             : model.stats.volumes
         return GroupedPanel {
             if volumes.isEmpty {
-                Text("No disks")
+                Text("No disks mounted")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .stagger(index: 0, generation: presentation.generation)
@@ -1225,7 +1421,7 @@ private struct SettingsDetail: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Menu bar")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Preview of tools that are on")
+                        Text("Show which tools are on")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -1245,7 +1441,7 @@ private struct SettingsDetail: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Menu bar stats")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Glance next to the logo")
+                        Text("Show a labeled stat next to the logo")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -1267,7 +1463,7 @@ private struct SettingsDetail: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Check status")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Read each tool from this Mac")
+                        Text("Restore anything that dropped")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -1315,11 +1511,11 @@ private struct SettingsDetail: View {
                     .disabled(model.updateCheckBusy)
                     .accessibilityLabel("Check latest version")
                     if model.newerVersion != nil {
-                        Button("Open") {
+                        Button("View release") {
                             model.openLatestRelease()
                         }
                         .controlSize(.small)
-                        .accessibilityLabel("Open latest release")
+                        .accessibilityLabel("View latest release")
                     }
                 }
                 .stagger(index: 4, generation: presentation.generation)

@@ -33,6 +33,19 @@ enum CLICommands {
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .awake)
     }
 
+    static func menuBar(_ action: CLISwitch, json: Bool) throws {
+        let tool = ToolRegistry.shared.menuBar
+        switch action {
+        case .status:
+            break
+        case .on:
+            tool.turn(true)
+        case .off:
+            tool.turn(false)
+        }
+        emit(StatusBuilder.make(includeMac: false), json: json, focus: .menuBar)
+    }
+
     private static func run(_ id: ToolID, _ action: CLISwitch) throws {
         let tool = ToolRegistry.shared.toggle(id)
         switch action {
@@ -67,7 +80,7 @@ enum CLICommands {
     }
 
     private enum Focus {
-        case keyboard, scroll, lid, awake, all
+        case keyboard, scroll, lid, awake, menuBar, all
     }
 
     private static func emit(_ snapshot: ToolsSnapshot, json: Bool, focus: Focus = .all) {
@@ -83,6 +96,7 @@ enum CLICommands {
             print(humanLine("scroll", humanScroll(snapshot.scroll)))
             print(humanLine("lid", humanLid(snapshot.lid)))
             print(humanLine("awake", humanAwake(snapshot.awake)))
+            print(humanLine("menubar", humanMenuBar(snapshot.menubar)))
             if let mac = snapshot.mac {
                 print(humanLine("mac", humanMac(mac)))
             }
@@ -94,6 +108,8 @@ enum CLICommands {
             print(humanLine("lid", humanLid(snapshot.lid)))
         case .awake:
             print(humanLine("awake", humanAwake(snapshot.awake)))
+        case .menuBar:
+            print(humanLine("menubar", humanMenuBar(snapshot.menubar)))
         }
     }
 
@@ -127,7 +143,7 @@ enum CLICommands {
     }
 
     private static func humanLid(_ status: LidStatusJSON) -> String {
-        status.disabled ? "on (lid stays awake on battery)" : "off"
+        status.disabled ? "on (ignores lid close on battery)" : "off"
     }
 
     private static func humanAwake(_ status: AwakeStatusJSON) -> String {
@@ -136,6 +152,13 @@ enum CLICommands {
             return "on  \(formatRemaining(remaining)) left"
         }
         return "on  indefinitely"
+    }
+
+    private static func humanMenuBar(_ status: MenuBarStatusJSON) -> String {
+        if !status.enabled { return "off" }
+        var parts = ["on"]
+        if status.offscreenItems > 0 { parts.append("\(status.offscreenItems) off screen") }
+        return parts.joined(separator: "  ")
     }
 
     private static func humanMac(_ status: MacStatusJSON) -> String {

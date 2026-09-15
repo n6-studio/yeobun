@@ -14,6 +14,11 @@ struct ToolState: Codable, Equatable {
     var awakeDeadline: TimeInterval?
     var caffeinatePID: Int = 0
     var scrollHelperPID: Int = 0
+    var menuBarHideEnabled: Bool = false
+    var menuBarHidden: Bool = true
+    var menuBarStripIconSize: Int = 24
+    var menuBarStripLabelSize: Int = 9
+    var menuBarStripLayout: MenuBarStripLayout = .grid
     var keyboardBacklightDidForce: Bool = false
     var keyboardBacklightSavedBrightness: Float = 0
     var keyboardBacklightSavedAuto: Bool = false
@@ -34,9 +39,20 @@ struct ToolState: Codable, Equatable {
         awakeDeadline = try container.decodeIfPresent(TimeInterval.self, forKey: .awakeDeadline)
         caffeinatePID = try container.decodeIfPresent(Int.self, forKey: .caffeinatePID) ?? 0
         scrollHelperPID = try container.decodeIfPresent(Int.self, forKey: .scrollHelperPID) ?? 0
+        menuBarHideEnabled = try container.decodeIfPresent(Bool.self, forKey: .menuBarHideEnabled) ?? false
+        menuBarHidden = try container.decodeIfPresent(Bool.self, forKey: .menuBarHidden) ?? true
+        menuBarStripIconSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripIconSize) ?? 24
+        menuBarStripLabelSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripLabelSize) ?? 9
+        menuBarStripLayout = try container.decodeIfPresent(MenuBarStripLayout.self, forKey: .menuBarStripLayout) ?? .grid
+        let sizes = MenuBarTool.resolvedSizes(icon: menuBarStripIconSize, label: menuBarStripLabelSize)
+        menuBarStripIconSize = sizes.icon
+        menuBarStripLabelSize = sizes.label
         keyboardBacklightDidForce = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightDidForce) ?? false
         keyboardBacklightSavedBrightness = try container.decodeIfPresent(Float.self, forKey: .keyboardBacklightSavedBrightness) ?? 0
         keyboardBacklightSavedAuto = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightSavedAuto) ?? false
+        if menuBarHideEnabled {
+            menuBarHidden = true
+        }
     }
 }
 
@@ -68,8 +84,13 @@ final class ToolStateStore {
         lock.unlock()
     }
 
+    /// Read-modify-write against the file, so the app and the CLI cannot
+    /// overwrite each other's fields with a stale in-memory copy.
     func update(_ body: (inout ToolState) -> Void) {
         lock.lock()
+        if let fresh = Self.decodeFromDisk() {
+            state = fresh
+        }
         body(&state)
         let snapshot = state
         lock.unlock()
@@ -100,11 +121,12 @@ final class ToolStateStore {
     }
 
     private static func loadFromDisk() -> ToolState {
-        if let data = try? Data(contentsOf: YeobunPaths.stateFile),
-           let state = try? JSONDecoder().decode(ToolState.self, from: data) {
-            return state
-        }
-        return migrateFromUserDefaults()
+        decodeFromDisk() ?? migrateFromUserDefaults()
+    }
+
+    private static func decodeFromDisk() -> ToolState? {
+        guard let data = try? Data(contentsOf: YeobunPaths.stateFile) else { return nil }
+        return try? JSONDecoder().decode(ToolState.self, from: data)
     }
 
     private static func write(_ state: ToolState) {

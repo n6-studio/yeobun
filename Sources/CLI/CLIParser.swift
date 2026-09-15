@@ -21,10 +21,20 @@ enum CLIParser {
       yeobun awake on [--minutes N] [--json]
       yeobun awake off [--json]
       yeobun awake status [--json]
+      yeobun menubar on [--json]
+      yeobun menubar off [--json]
+      yeobun menubar status [--json]
       yeobun mac [--json]
 
+    keyboard  Built-in keyboard
+    scroll    Scroll reverse
+    lid       Lid awake
+    awake     Keep awake
+    menubar   Hidden icons
+    mac       This Mac
+
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
-    Awake --minutes: \(awakeMinutes.map(String.init).joined(separator: ", ")) (omit for indefinitely)
+    Keep awake --minutes: \(awakeMinutes.map(String.init).joined(separator: ", ")) (omit for indefinitely)
 
     Exit codes: 0 ok, 1 failed, 2 usage, 3 permission
 
@@ -64,6 +74,8 @@ enum CLIParser {
             return CLIRequest(command: .lid(try parseSwitch(Array(tokens.dropFirst()), tool: .lid)), json: json)
         case "awake":
             return CLIRequest(command: .awake(try parseSwitch(Array(tokens.dropFirst()), tool: .awake)), json: json)
+        case "menubar":
+            return CLIRequest(command: .menuBar(try parseSwitch(Array(tokens.dropFirst()), tool: .menuBar)), json: json)
         default:
             throw CLIError.usage("Unknown command: \(first)")
         }

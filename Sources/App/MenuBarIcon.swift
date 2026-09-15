@@ -33,6 +33,14 @@ enum MenuBarStats: String, CaseIterable, Identifiable {
         case .network: "Network"
         }
     }
+
+    /// Tiny caption drawn above the menu-bar value. `nil` when stats are off.
+    var caption: String? {
+        switch self {
+        case .off: nil
+        case .cpu, .battery, .network: title
+        }
+    }
 }
 
 /// Menu-bar template of the Yeobun Y Wrench mark, optionally followed by active-tool symbols.
@@ -47,7 +55,12 @@ enum MenuBarIcon {
     private static let logoToGridGap: CGFloat = 4
     private static let symbolPointSize: CGFloat = 8
 
-    static func makeImage(mode: MenuBarDisplay, tools: [ToolID], statsText: String? = nil) -> NSImage {
+    static func makeImage(
+        mode: MenuBarDisplay,
+        tools: [ToolID],
+        statsText: String? = nil,
+        statsCaption: String? = nil
+    ) -> NSImage {
         let stats = statsText.flatMap { $0.isEmpty ? nil : $0 }
         if stats == nil {
             switch mode {
@@ -61,15 +74,15 @@ enum MenuBarIcon {
         }
         switch mode {
         case .logoOnly:
-            return makeCompositeImage(showLogo: true, tools: [], statsText: stats)
+            return makeCompositeImage(showLogo: true, tools: [], statsText: stats, statsCaption: statsCaption)
         case .activeIcons:
             return tools.isEmpty
-                ? makeCompositeImage(showLogo: true, tools: [], statsText: stats)
-                : makeCompositeImage(showLogo: false, tools: tools, statsText: stats)
+                ? makeCompositeImage(showLogo: true, tools: [], statsText: stats, statsCaption: statsCaption)
+                : makeCompositeImage(showLogo: false, tools: tools, statsText: stats, statsCaption: statsCaption)
         case .logoAndActive:
             return tools.isEmpty
-                ? makeCompositeImage(showLogo: true, tools: [], statsText: stats)
-                : makeCompositeImage(showLogo: true, tools: tools, statsText: stats)
+                ? makeCompositeImage(showLogo: true, tools: [], statsText: stats, statsCaption: statsCaption)
+                : makeCompositeImage(showLogo: true, tools: tools, statsText: stats, statsCaption: statsCaption)
         }
     }
 
@@ -81,10 +94,14 @@ enum MenuBarIcon {
         return NSStatusItem.variableLength
     }
 
-    static func tooltip(tools: [ToolID], statsText: String? = nil) -> String {
+    static func tooltip(tools: [ToolID], statsText: String? = nil, statsCaption: String? = nil) -> String {
         var parts = ["Yeobun"]
         if let statsText, !statsText.isEmpty {
-            parts.append(statsText)
+            if let statsCaption, !statsCaption.isEmpty {
+                parts.append("\(statsCaption) \(statsText)")
+            } else {
+                parts.append(statsText)
+            }
         }
         if !tools.isEmpty {
             parts.append(tools.map(\.title).joined(separator: ", "))
@@ -107,24 +124,38 @@ enum MenuBarIcon {
         return NSSize(width: width, height: pointSize.height)
     }
 
-    private static let statsFontSize: CGFloat = 11
+    private static let statsValueFontSize: CGFloat = 10
+    private static let statsCaptionFontSize: CGFloat = 7
     private static let logoToStatsGap: CGFloat = 4
 
-    private static func statsAttributes() -> [NSAttributedString.Key: Any] {
+    private static func statsValueAttributes() -> [NSAttributedString.Key: Any] {
         [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: statsFontSize, weight: .medium),
+            .font: NSFont.monospacedDigitSystemFont(ofSize: statsValueFontSize, weight: .medium),
             .foregroundColor: NSColor.black
         ]
     }
 
-    private static func statsSize(_ text: String) -> NSSize {
-        let size = (text as NSString).size(withAttributes: statsAttributes())
-        return NSSize(width: ceil(size.width), height: pointSize.height)
+    private static func statsCaptionAttributes() -> [NSAttributedString.Key: Any] {
+        [
+            .font: NSFont.systemFont(ofSize: statsCaptionFontSize, weight: .semibold),
+            .foregroundColor: NSColor.black
+        ]
     }
 
-    private static func makeCompositeImage(showLogo: Bool, tools: [ToolID], statsText: String? = nil) -> NSImage {
+    private static func statsSize(value: String, caption: String?) -> NSSize {
+        let valueWidth = (value as NSString).size(withAttributes: statsValueAttributes()).width
+        let captionWidth = caption.map { ($0 as NSString).size(withAttributes: statsCaptionAttributes()).width } ?? 0
+        return NSSize(width: ceil(max(valueWidth, captionWidth)) + 1, height: pointSize.height)
+    }
+
+    private static func makeCompositeImage(
+        showLogo: Bool,
+        tools: [ToolID],
+        statsText: String? = nil,
+        statsCaption: String? = nil
+    ) -> NSImage {
         let grid = tools.isEmpty ? NSSize.zero : gridSize(toolCount: tools.count)
-        let stats = statsText.map(statsSize) ?? .zero
+        let stats = statsText.map { statsSize(value: $0, caption: statsCaption) } ?? .zero
         var width: CGFloat = 0
         if showLogo { width += pointSize.width }
         if !tools.isEmpty {
@@ -163,17 +194,37 @@ enum MenuBarIcon {
             }
             if let statsText {
                 if originX > 0 { originX += logoToStatsGap }
-                (statsText as NSString).draw(
-                    at: NSPoint(x: originX, y: (pointSize.height - statsFontSize) / 2 - 1),
-                    withAttributes: statsAttributes()
-                )
+                drawStats(value: statsText, caption: statsCaption, at: originX)
             }
             return true
         }
         image.isTemplate = true
         image.cacheMode = .never
-        image.accessibilityDescription = "Yeobun"
+        image.accessibilityDescription = tooltip(
+            tools: tools,
+            statsText: statsText,
+            statsCaption: statsCaption
+        )
         return image
+    }
+
+    private static func drawStats(value: String, caption: String?, at originX: CGFloat) {
+        let valueText = value as NSString
+        if let caption, !caption.isEmpty {
+            (caption as NSString).draw(
+                at: NSPoint(x: originX, y: 9),
+                withAttributes: statsCaptionAttributes()
+            )
+            valueText.draw(
+                at: NSPoint(x: originX, y: -0.5),
+                withAttributes: statsValueAttributes()
+            )
+            return
+        }
+        valueText.draw(
+            at: NSPoint(x: originX, y: (pointSize.height - statsValueFontSize) / 2 - 1),
+            withAttributes: statsValueAttributes()
+        )
     }
 
     private static func drawSymbol(_ tool: ToolID, in rect: CGRect) {

@@ -13,9 +13,9 @@ enum UpdateCheckError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .noRelease:
-            return "No GitHub release yet"
+            return "No release yet"
         case .badResponse:
-            return "Could not read GitHub releases"
+            return "Unable to read GitHub releases"
         case .network(let message):
             return message
         }
