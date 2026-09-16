@@ -46,6 +46,11 @@ enum CLICommands {
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .menuBar)
     }
 
+    static func voice(_ action: CLISwitch, json: Bool) throws {
+        try run(.voice, action)
+        emit(StatusBuilder.make(includeMac: false), json: json, focus: .voice)
+    }
+
     private static func run(_ id: ToolID, _ action: CLISwitch) throws {
         let tool = ToolRegistry.shared.toggle(id)
         switch action {
@@ -80,7 +85,7 @@ enum CLICommands {
     }
 
     private enum Focus {
-        case keyboard, scroll, lid, awake, menuBar, all
+        case keyboard, scroll, lid, awake, menuBar, voice, all
     }
 
     private static func emit(_ snapshot: ToolsSnapshot, json: Bool, focus: Focus = .all) {
@@ -97,6 +102,7 @@ enum CLICommands {
             print(humanLine("lid", humanLid(snapshot.lid)))
             print(humanLine("awake", humanAwake(snapshot.awake)))
             print(humanLine("menubar", humanMenuBar(snapshot.menubar)))
+            print(humanLine("voice", humanVoice(snapshot.voice)))
             if let mac = snapshot.mac {
                 print(humanLine("mac", humanMac(mac)))
             }
@@ -110,6 +116,8 @@ enum CLICommands {
             print(humanLine("awake", humanAwake(snapshot.awake)))
         case .menuBar:
             print(humanLine("menubar", humanMenuBar(snapshot.menubar)))
+        case .voice:
+            print(humanLine("voice", humanVoice(snapshot.voice)))
         }
     }
 
@@ -158,6 +166,16 @@ enum CLICommands {
         if !status.enabled { return "off" }
         var parts = ["on"]
         if status.offscreenItems > 0 { parts.append("\(status.offscreenItems) off screen") }
+        return parts.joined(separator: "  ")
+    }
+
+    private static func humanVoice(_ status: VoiceStatusJSON) -> String {
+        var parts = [status.listening ? "on" : "off"]
+        parts.append(status.hotkey)
+        if !status.locale.isEmpty { parts.append(status.locale) }
+        if status.microphone == "denied" { parts.append("needs Microphone") }
+        if status.typesText, !status.accessibility { parts.append("needs Accessibility to type") }
+        if !status.listening, !status.notice.isEmpty { parts.append(status.notice) }
         return parts.joined(separator: "  ")
     }
 

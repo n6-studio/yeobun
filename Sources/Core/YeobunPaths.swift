@@ -4,6 +4,9 @@ import Foundation
 enum YeobunPaths {
     static let stateDidChangeNotification = Notification.Name("studio.n6.yeobun.stateDidChange")
     static let scrollReloadNotification = Notification.Name("studio.n6.yeobun.scrollReload")
+    /// Posted by the CLI with object "on" or "off"; only the app owns the microphone.
+    static let voiceCommandNotification = Notification.Name("studio.n6.yeobun.voiceCommand")
+    static let appBundleIdentifier = "studio.n6.yeobun"
     static let scrollHelperName = "yeobun-scroll"
 
     static var applicationSupport: URL {

@@ -122,6 +122,9 @@ swiftc "${SWIFTC_COMMON[@]}" \
   -framework SwiftUI \
   -framework ServiceManagement \
   -framework ScreenCaptureKit \
+  -framework Speech \
+  -framework AVFoundation \
+  -framework Carbon \
   -o "$APP/Contents/MacOS/$EXEC" \
   "${CORE_SOURCES[@]}" "${APP_SOURCES[@]}"
 

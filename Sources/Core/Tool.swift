@@ -11,6 +11,7 @@ enum ToolID: String, CaseIterable, Identifiable {
     case lid
     case awake
     case menuBar = "menubar"
+    case voice
     case machine
     case battery
     case network
@@ -20,7 +21,7 @@ enum ToolID: String, CaseIterable, Identifiable {
 
     var kind: ToolKind {
         switch self {
-        case .keyboard, .scroll, .lid, .awake, .menuBar: .toggle
+        case .keyboard, .scroll, .lid, .awake, .menuBar, .voice: .toggle
         case .machine, .battery, .network, .storage: .informational
         }
     }

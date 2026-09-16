@@ -24,6 +24,9 @@ enum CLIParser {
       yeobun menubar on [--json]
       yeobun menubar off [--json]
       yeobun menubar status [--json]
+      yeobun voice on [--json]
+      yeobun voice off [--json]
+      yeobun voice status [--json]
       yeobun mac [--json]
 
     keyboard  Built-in keyboard
@@ -31,6 +34,7 @@ enum CLIParser {
     lid       Lid awake
     awake     Keep awake
     menubar   Hidden icons
+    voice     Voice typing (the app must be running; it types into the frontmost app)
     mac       This Mac
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
@@ -76,6 +80,8 @@ enum CLIParser {
             return CLIRequest(command: .awake(try parseSwitch(Array(tokens.dropFirst()), tool: .awake)), json: json)
         case "menubar":
             return CLIRequest(command: .menuBar(try parseSwitch(Array(tokens.dropFirst()), tool: .menuBar)), json: json)
+        case "voice":
+            return CLIRequest(command: .voice(try parseSwitch(Array(tokens.dropFirst()), tool: .voice)), json: json)
         default:
             throw CLIError.usage("Unknown command: \(first)")
         }

@@ -122,6 +122,12 @@ final class MenuBarController: NSObject {
             isOn: model.menuBarHideEnabled,
             isEnabled: true
         ))
+        menu.addItem(toggleItem(
+            title: HomeTool.voice.title,
+            action: #selector(toggleVoiceFromMenu),
+            isOn: model.voiceListening,
+            isEnabled: !model.voiceBusy
+        ))
         menu.addItem(.separator())
         menu.addItem(menuBarDisplayItem())
         menu.addItem(menuBarStatsItem())
@@ -173,6 +179,10 @@ final class MenuBarController: NSObject {
 
     @objc private func toggleMenuBarFromMenu() {
         model.toggleMenuBarHide()
+    }
+
+    @objc private func toggleVoiceFromMenu() {
+        model.toggleVoice()
     }
 
     @objc private func quitFromMenu() {
@@ -280,6 +290,7 @@ final class MenuBarController: NSObject {
             model.$awakeActive
         )
         .combineLatest(model.$menuBarHideEnabled)
+        .combineLatest(model.$voiceListening)
         .combineLatest(model.$menuBarDisplay)
         .combineLatest(model.$menuBarStats)
         .combineLatest(model.$stats)

@@ -54,6 +54,8 @@ struct CLIRequest {
             try CLICommands.awake(action, json: json)
         case .menuBar(let action):
             try CLICommands.menuBar(action, json: json)
+        case .voice(let action):
+            try CLICommands.voice(action, json: json)
         case .mac:
             try CLICommands.mac(json: json)
         }
@@ -68,6 +70,7 @@ enum CLICommand {
     case lid(CLISwitch)
     case awake(CLISwitch)
     case menuBar(CLISwitch)
+    case voice(CLISwitch)
     case mac
 }
 

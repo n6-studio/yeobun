@@ -19,6 +19,18 @@ struct ToolState: Codable, Equatable {
     var menuBarStripIconSize: Int = 24
     var menuBarStripLabelSize: Int = 9
     var menuBarStripLayout: MenuBarStripLayout = .grid
+    /// Written by the app while a voice session is live; the CLI only reads it.
+    var voiceListening: Bool = false
+    /// Locale identifier, empty for the system language.
+    var voiceLocale: String = ""
+    var voiceHotKey: HotKey = .defaultVoice
+    var voiceSilenceSeconds: Int = VoiceTool.defaultSilenceSeconds
+    var voiceTypesText: Bool = true
+    /// Last reason a session could not start, for the CLI. Empty when fine.
+    var voiceNotice: String = ""
+    /// "granted", "denied", or "" while unknown. The app writes it; the CLI
+    /// cannot ask TCC on Yeobun's behalf.
+    var voiceMicrophone: String = ""
     var keyboardBacklightDidForce: Bool = false
     var keyboardBacklightSavedBrightness: Float = 0
     var keyboardBacklightSavedAuto: Bool = false
@@ -47,6 +59,14 @@ struct ToolState: Codable, Equatable {
         let sizes = MenuBarTool.resolvedSizes(icon: menuBarStripIconSize, label: menuBarStripLabelSize)
         menuBarStripIconSize = sizes.icon
         menuBarStripLabelSize = sizes.label
+        voiceListening = try container.decodeIfPresent(Bool.self, forKey: .voiceListening) ?? false
+        voiceLocale = try container.decodeIfPresent(String.self, forKey: .voiceLocale) ?? ""
+        voiceHotKey = try container.decodeIfPresent(HotKey.self, forKey: .voiceHotKey) ?? .defaultVoice
+        let silence = try container.decodeIfPresent(Int.self, forKey: .voiceSilenceSeconds) ?? VoiceTool.defaultSilenceSeconds
+        voiceSilenceSeconds = VoiceTool.silenceChoices.contains(silence) ? silence : VoiceTool.defaultSilenceSeconds
+        voiceTypesText = try container.decodeIfPresent(Bool.self, forKey: .voiceTypesText) ?? true
+        voiceNotice = try container.decodeIfPresent(String.self, forKey: .voiceNotice) ?? ""
+        voiceMicrophone = try container.decodeIfPresent(String.self, forKey: .voiceMicrophone) ?? ""
         keyboardBacklightDidForce = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightDidForce) ?? false
         keyboardBacklightSavedBrightness = try container.decodeIfPresent(Float.self, forKey: .keyboardBacklightSavedBrightness) ?? 0
         keyboardBacklightSavedAuto = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightSavedAuto) ?? false

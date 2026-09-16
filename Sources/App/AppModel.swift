@@ -76,6 +76,46 @@ final class AppModel: ObservableObject {
     }
     @Published var overflowStripOpen = false
 
+    @Published var voiceListening = false
+    @Published var voiceBusy = false
+    @Published var voiceStatus = "Off"
+    @Published var voiceTranscript = ""
+    @Published var voicePartial = ""
+    @Published var voiceError: String?
+    @Published var voiceMicrophoneDenied = false
+    @Published var voiceLocaleChoices: [VoiceLocaleChoice] = []
+    @Published var voiceLocale: String {
+        didSet {
+            guard voiceLocale != oldValue else { return }
+            ToolStateStore.shared.update { $0.voiceLocale = voiceLocale }
+            voiceSession.localeIdentifier = voiceLocale
+        }
+    }
+    @Published var voiceHotKey: HotKey {
+        didSet {
+            guard voiceHotKey != oldValue else { return }
+            ToolStateStore.shared.update { $0.voiceHotKey = voiceHotKey }
+            voiceHotKeys.register(voiceHotKey)
+            refreshVoiceStatus()
+        }
+    }
+    @Published var voiceSilenceSeconds: Int {
+        didSet {
+            guard voiceSilenceSeconds != oldValue else { return }
+            ToolStateStore.shared.update { $0.voiceSilenceSeconds = voiceSilenceSeconds }
+            voiceSession.silenceSeconds = voiceSilenceSeconds
+        }
+    }
+    @Published var voiceTypesText: Bool {
+        didSet {
+            guard voiceTypesText != oldValue else { return }
+            ToolStateStore.shared.update { $0.voiceTypesText = voiceTypesText }
+            voiceSession.typesText = voiceTypesText
+            refreshVoiceStatus()
+        }
+    }
+    let voiceSilenceChoices = VoiceTool.silenceChoices
+
     /// Icons macOS pushed out of the bar, found on the last peek.
     @Published var overflowItems: [OverflowItem] = []
     @Published var overflowScanned = false
@@ -144,6 +184,9 @@ final class AppModel: ObservableObject {
     private let overflowQueue = DispatchQueue(label: "studio.n6.yeobun.overflow", qos: .userInitiated)
 
     private var panelWantsStats = false
+    private let voiceSession = VoiceSession()
+    private let voiceHotKeys = VoiceHotKeyService()
+    private var voiceObserver: NSObjectProtocol?
 
     private enum Keys {
         static let launchAtLogin = "launchAtLogin"
@@ -176,6 +219,10 @@ final class AppModel: ObservableObject {
         menuBarStripIconSize = sizes.icon
         menuBarStripLabelSize = sizes.label
         menuBarStripLayout = state.menuBarStripLayout
+        voiceLocale = state.voiceLocale
+        voiceHotKey = state.voiceHotKey
+        voiceSilenceSeconds = state.voiceSilenceSeconds
+        voiceTypesText = state.voiceTypesText
         if defaults.object(forKey: Keys.launchAtLogin) == nil {
             launchAtLogin = true
             defaults.set(true, forKey: Keys.launchAtLogin)
@@ -291,6 +338,7 @@ final class AppModel: ObservableObject {
         if lidSleepDisabled { tools.append(.lid) }
         if awakeActive { tools.append(.awake) }
         if menuBarHideEnabled { tools.append(.menuBar) }
+        if voiceListening { tools.append(.voice) }
         return tools
     }
 
@@ -436,6 +484,7 @@ final class AppModel: ObservableObject {
             }
         }
         devices.start()
+        startVoice()
         restorePersistedTools()
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -476,6 +525,11 @@ final class AppModel: ObservableObject {
         if let stateObserver {
             DistributedNotificationCenter.default().removeObserver(stateObserver)
         }
+        if let voiceObserver {
+            DistributedNotificationCenter.default().removeObserver(voiceObserver)
+        }
+        voiceSession.stop()
+        voiceHotKeys.unregister()
         statsService.stop()
         updateCheckEpoch += 1
         updateCheckTask?.cancel()
@@ -1197,8 +1251,168 @@ final class AppModel: ObservableObject {
         accessibilityTrusted = trusted
         if changed {
             refreshScrollReverseState()
+            refreshVoiceStatus()
         } else {
             updateScrollStatus()
+        }
+        let microphoneDenied = VoiceMicrophone.permission == .denied
+        if microphoneDenied != voiceMicrophoneDenied {
+            voiceMicrophoneDenied = microphoneDenied
+        }
+    }
+
+    // MARK: - Voice typing
+
+    var voiceTileStatus: String {
+        voiceListening ? "On" : "Off"
+    }
+
+    var voiceHasTranscript: Bool {
+        !voiceTranscript.isEmpty || !voicePartial.isEmpty
+    }
+
+    func toggleVoice() {
+        voiceError = nil
+        voiceSession.toggle()
+    }
+
+    func setVoiceListening(_ listening: Bool) {
+        voiceError = nil
+        if listening {
+            voiceSession.start()
+        } else {
+            voiceSession.stop()
+        }
+    }
+
+    func clearVoiceTranscript() {
+        voiceTranscript = ""
+        voicePartial = ""
+    }
+
+    func copyVoiceTranscript() {
+        let text = [voiceTranscript, voicePartial]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !text.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    /// The recorder swallows the next key press, so the live shortcut steps aside.
+    func setVoiceShortcutRecording(_ recording: Bool) {
+        if recording {
+            voiceHotKeys.unregister()
+        } else {
+            voiceHotKeys.register(voiceHotKey)
+        }
+    }
+
+    func openMicrophoneSettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_Microphone",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
+        ]
+        for raw in urls {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
+    static func voiceSilenceLabel(_ seconds: Int) -> String {
+        switch seconds {
+        case 0: return "Never"
+        case 60: return "1 minute"
+        default: return "\(seconds) seconds"
+        }
+    }
+
+    private func startVoice() {
+        tools.voice.driver = voiceSession
+        tools.voice.restore()
+        voiceSession.localeIdentifier = voiceLocale
+        voiceSession.silenceSeconds = voiceSilenceSeconds
+        voiceSession.typesText = voiceTypesText
+        voiceSession.onPhase = { [weak self] phase in
+            self?.applyVoicePhase(phase)
+        }
+        voiceSession.onPartial = { [weak self] text in
+            self?.voicePartial = text
+        }
+        voiceSession.onPhrase = { [weak self] text in
+            guard let self else { return }
+            voiceTranscript = voiceTranscript.isEmpty ? text : voiceTranscript + " " + text
+        }
+        voiceHotKeys.onPress = { [weak self] in
+            self?.toggleVoice()
+        }
+        voiceHotKeys.register(voiceHotKey)
+        voiceObserver = DistributedNotificationCenter.default().addObserver(
+            forName: YeobunPaths.voiceCommandNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            self?.setVoiceListening((notification.object as? String) == "on")
+        }
+        voiceMicrophoneDenied = VoiceMicrophone.permission == .denied
+        refreshVoiceStatus()
+        loadVoiceLocales()
+    }
+
+    private func applyVoicePhase(_ phase: VoiceSession.Phase) {
+        switch phase {
+        case .idle:
+            voiceListening = false
+            voiceBusy = false
+        case .requestingMicrophone:
+            voiceBusy = true
+        case .preparing:
+            voiceBusy = true
+        case .listening:
+            voiceListening = true
+            voiceBusy = false
+        case .failed(let message):
+            voiceListening = false
+            voiceBusy = false
+            voiceError = message
+        }
+        voiceMicrophoneDenied = VoiceMicrophone.permission == .denied
+        refreshVoiceStatus()
+    }
+
+    private func refreshVoiceStatus() {
+        switch voiceSession.phase {
+        case .idle, .failed:
+            voiceStatus = "Press \(voiceHotKey.display) anywhere to start"
+        case .requestingMicrophone:
+            voiceStatus = "Waiting for microphone access…"
+        case .preparing(let message):
+            voiceStatus = message
+        case .listening:
+            if !voiceTypesText {
+                voiceStatus = "Listening. Text stays in this panel"
+            } else if !accessibilityTrusted {
+                voiceStatus = "Listening. Allow Accessibility to type into apps"
+            } else {
+                voiceStatus = "Listening. Typing into the front app"
+            }
+        }
+    }
+
+    private func loadVoiceLocales() {
+        let stored = voiceLocale
+        Task { @MainActor [weak self] in
+            let engine = VoiceEngineFactory.make()
+            let locales = await engine.supportedLocales()
+            var choices = locales
+                .map { VoiceLocaleChoice(id: $0.identifier, name: VoiceEngineFactory.localeName($0)) }
+                .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            if !stored.isEmpty, !choices.contains(where: { $0.id == stored }) {
+                choices.append(VoiceLocaleChoice(id: stored, name: VoiceEngineFactory.localeName(Locale(identifier: stored))))
+            }
+            let system = VoiceEngineFactory.localeName(.current)
+            choices.insert(VoiceLocaleChoice(id: "", name: "System (\(system))"), at: 0)
+            self?.voiceLocaleChoices = choices
         }
     }
 
@@ -1236,6 +1450,10 @@ final class AppModel: ObservableObject {
             ? state.awakeMinutes
             : awakeMinutes
         suppressAwakeRestart = false
+        voiceLocale = state.voiceLocale
+        voiceHotKey = state.voiceHotKey
+        voiceSilenceSeconds = state.voiceSilenceSeconds
+        voiceTypesText = state.voiceTypesText
         refreshKeyboardStatus(alignBacklight: true)
         refreshLidStatus()
         restoreAwakeIfNeeded()
@@ -1257,4 +1475,9 @@ final class AppModel: ObservableObject {
             loginItemNotice = "Unable to update Open at login"
         }
     }
+}
+
+struct VoiceLocaleChoice: Identifiable, Hashable {
+    let id: String
+    let name: String
 }

@@ -27,7 +27,8 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-15
+    # macOS 26 SDK: Voice typing uses SpeechAnalyzer when available.
+    runs-on: macos-26
     steps:
       - name: Checkout
         uses: actions/checkout@v4

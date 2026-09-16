@@ -77,6 +77,14 @@ private func captureAll(to out: URL) throws {
         model.menuBarHidden = true
         model.menuBarStatus = "Hidden icons sit left of the chevron"
     }
+    try writePair(name: "voice", to: out) { model, presentation in
+        presentation.route = .voice
+        seedHome(model)
+        model.voiceListening = true
+        model.voiceStatus = "Listening. Typing into the front app"
+        model.voiceTranscript = "Ship the release notes tonight and move the retro to Thursday."
+        model.voicePartial = "Also remind"
+    }
     try writePair(name: "this-mac", to: out) { model, presentation in
         presentation.route = .machine
         seedHome(model)
@@ -138,6 +146,23 @@ private func seedHome(_ model: AppModel) {
     model.menuBarStripIconSize = MenuBarTool.defaultIconSize
     model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize
     model.screenRecordingGranted = true
+
+    model.voiceListening = false
+    model.voiceBusy = false
+    model.voiceStatus = "Press ⌃⌥V anywhere to start"
+    model.voiceTranscript = ""
+    model.voicePartial = ""
+    model.voiceError = nil
+    model.voiceMicrophoneDenied = false
+    model.voiceLocale = ""
+    model.voiceHotKey = .defaultVoice
+    model.voiceSilenceSeconds = 30
+    model.voiceTypesText = true
+    model.voiceLocaleChoices = [
+        VoiceLocaleChoice(id: "", name: "System (English (US))"),
+        VoiceLocaleChoice(id: "en-GB", name: "English (UK)"),
+        VoiceLocaleChoice(id: "it-IT", name: "Italian (Italy)")
+    ]
 
     model.visibleHomeTools = Array(HomeTool.allCases)
     model.hiddenHomeTools = []

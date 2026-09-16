@@ -19,9 +19,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string>
+	<string>0.3.0</string>
 	<key>CFBundleVersion</key>
-	<string>0.2.0</string>
+	<string>0.3.0</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSMinimumSystemVersion</key>
@@ -34,7 +34,11 @@
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © N6 Studio</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Yeobun listens to the microphone while Voice typing is on, so it can type what you say. Audio stays on this Mac.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Yeobun turns your speech into text on this Mac for Voice typing.</string>
 </dict>
 </plist>

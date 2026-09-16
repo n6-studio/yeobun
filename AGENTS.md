@@ -27,9 +27,10 @@ Mimic **macOS Control Center**. Stay on SwiftUI + AppKit. Do not add a third-par
 - Lid awake: `Color.purple`
 - Keep awake: `Color.brown`
 - Hidden icons: `Color.teal`
+- Voice typing: `Color.red`
 - This Mac: always informational (never an On fill). Show **CPU and RAM** on the tile.
 - Battery, Network, Storage: always informational. Battery warns when charge is low; Storage warns when the disk is full.
-- Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Keep awake shows remaining time when a duration is set.
+- Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Voice typing shows a spinner while it asks for the microphone or loads a language. Keep awake shows remaining time when a duration is set.
 - Hover: brighten the tile fill (`offFillHover`, or a white wash when On). Icon circles brighten and scale to `1.06`. Press: `scale(0.96)`, 150ms, `cubic-bezier(0.2, 0, 0, 1)`.
 - Icons: outline when off, fill when on; cross-fade (scale 0.25→1, opacity, blur 4→0). Sit in a 30pt circle (`Radius.glyph`). Off disk `primary.opacity(0.14)`; on disk white 22% over the module fill.
 

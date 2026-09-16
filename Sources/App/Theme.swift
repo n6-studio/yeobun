@@ -42,6 +42,7 @@ enum PanelRoute: Equatable {
     case lid
     case awake
     case menuBar
+    case voice
     case machine
     case battery
     case network
@@ -56,6 +57,7 @@ enum PanelRoute: Equatable {
         case .lid: ToolID.lid.title
         case .awake: ToolID.awake.title
         case .menuBar: ToolID.menuBar.title
+        case .voice: ToolID.voice.title
         case .machine: ToolID.machine.title
         case .battery: ToolID.battery.title
         case .network: ToolID.network.title
@@ -96,6 +98,7 @@ extension ToolID {
         case .lid: "Lid awake"
         case .awake: "Keep awake"
         case .menuBar: "Hidden icons"
+        case .voice: "Voice typing"
         case .machine: "This Mac"
         case .battery: "Battery"
         case .network: "Network"
@@ -110,6 +113,7 @@ extension ToolID {
         case .lid: "moon.zzz"
         case .awake: "cup.and.saucer"
         case .menuBar: "eye.slash"
+        case .voice: "mic"
         case .machine: "cpu"
         case .battery: "battery.100percent"
         case .network: "wifi"
@@ -124,6 +128,7 @@ extension ToolID {
         case .lid: "moon.zzz.fill"
         case .awake: "cup.and.saucer.fill"
         case .menuBar: "eye.slash.fill"
+        case .voice: "mic.fill"
         case .machine: "cpu.fill"
         case .battery: "battery.100percent"
         case .network: "wifi"
@@ -138,6 +143,7 @@ extension ToolID {
         case .lid: ModuleColor.lid
         case .awake: ModuleColor.awake
         case .menuBar: ModuleColor.menuBar
+        case .voice: ModuleColor.voice
         case .machine, .battery, .network, .storage: ModuleColor.machine
         }
     }
@@ -164,6 +170,7 @@ extension ToolID {
         case .lid: .lid
         case .awake: .awake
         case .menuBar: .menuBar
+        case .voice: .voice
         case .machine: .machine
         case .battery: .battery
         case .network: .network
@@ -202,6 +209,7 @@ enum ModuleColor {
     static let lid = Color.purple
     static let awake = Color.brown
     static let menuBar = Color.teal
+    static let voice = Color.red
     static let machine = Color.secondary
     static let offFill = Color.primary.opacity(0.08)
     static let offFillHover = Color.primary.opacity(0.13)

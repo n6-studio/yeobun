@@ -84,6 +84,8 @@ struct ToolsPanel: View {
             AwakeDetail()
         case .menuBar:
             MenuBarDetail()
+        case .voice:
+            VoiceDetail()
         case .machine:
             MachineDetail()
         case .battery:
@@ -287,6 +289,18 @@ private struct HomeGrid: View {
                 accent: tool.accent,
                 onToggle: { model.toggleMenuBarHide() },
                 action: { presentation.open(.menuBar) }
+            )
+        case .voice:
+            ToolTile(
+                title: tool.title,
+                status: model.voiceTileStatus,
+                isOn: model.voiceListening,
+                isBusy: model.voiceBusy,
+                outline: tool.outline,
+                fill: tool.fill,
+                accent: tool.accent,
+                onToggle: { model.toggleVoice() },
+                action: { presentation.open(.voice) }
             )
         case .machine:
             InfoStatsTile(
@@ -1201,6 +1215,174 @@ private struct MenuBarDetail: View {
                 .stagger(index: 5, generation: presentation.generation)
             }
         }
+    }
+}
+
+private struct VoiceDetail: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var presentation: PanelPresentation
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GroupedPanel {
+                HStack(alignment: .center, spacing: 10) {
+                    StateSymbol(
+                        outline: "mic",
+                        fill: "mic.fill",
+                        isActive: model.voiceListening
+                    )
+                    .foregroundStyle(model.voiceListening ? ModuleColor.voice : .primary)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(HomeTool.voice.title)
+                            .font(.system(size: 13, weight: .semibold))
+                        Text(model.voiceStatus)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 8)
+                    if model.voiceBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Starting")
+                    }
+                    Toggle(
+                        HomeTool.voice.title,
+                        isOn: Binding(
+                            get: { model.voiceListening || model.voiceBusy },
+                            set: { model.setVoiceListening($0) }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                }
+                .stagger(index: 0, generation: presentation.generation)
+
+                if let error = model.voiceError {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if model.voiceMicrophoneDenied {
+                    Button("Allow Microphone") {
+                        model.openMicrophoneSettings()
+                    }
+                    .controlSize(.small)
+                } else if model.voiceTypesText, !model.accessibilityTrusted {
+                    Button("Allow Accessibility") {
+                        AccessibilityAuth.requestIfNeeded()
+                        model.openAccessibilitySettings()
+                        model.refreshAccessibility()
+                    }
+                    .controlSize(.small)
+                }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Transcript")
+                            .font(.system(size: 13))
+                        Spacer(minLength: 8)
+                        Button("Copy") {
+                            model.copyVoiceTranscript()
+                        }
+                        .controlSize(.small)
+                        .disabled(!model.voiceHasTranscript)
+                        Button("Clear") {
+                            model.clearVoiceTranscript()
+                        }
+                        .controlSize(.small)
+                        .disabled(!model.voiceHasTranscript)
+                    }
+                    ScrollView(.vertical) {
+                        transcriptText
+                            .font(.system(size: 12))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(minHeight: 44, maxHeight: 120)
+                }
+                .stagger(index: 1, generation: presentation.generation)
+            }
+
+            GroupedPanel {
+                HStack {
+                    Text("Language")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Picker("Language", selection: $model.voiceLocale) {
+                        ForEach(model.voiceLocaleChoices) { choice in
+                            Text(choice.name).tag(choice.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    .frame(maxWidth: 160)
+                }
+                .stagger(index: 2, generation: presentation.generation)
+
+                HStack {
+                    Text("Shortcut")
+                        .font(.system(size: 13))
+                    Spacer()
+                    ShortcutRecorder(hotKey: $model.voiceHotKey) { recording in
+                        model.setVoiceShortcutRecording(recording)
+                    }
+                }
+                .stagger(index: 3, generation: presentation.generation)
+
+                HStack {
+                    Text("Stop after silence")
+                        .font(.system(size: 13))
+                    Spacer()
+                    Picker("Stop after silence", selection: $model.voiceSilenceSeconds) {
+                        ForEach(model.voiceSilenceChoices, id: \.self) { seconds in
+                            Text(AppModel.voiceSilenceLabel(seconds)).tag(seconds)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                }
+                .stagger(index: 4, generation: presentation.generation)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Type into the front app")
+                            .font(.system(size: 13))
+                        Text("Off keeps the words in this panel")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Toggle("Type into the front app", isOn: $model.voiceTypesText)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+                .stagger(index: 5, generation: presentation.generation)
+            }
+        }
+    }
+
+    private var transcriptText: Text {
+        if !model.voiceHasTranscript {
+            return Text(model.voiceListening ? "Say something…" : "Words you say show up here")
+                .foregroundColor(.secondary)
+        }
+        var text = Text(model.voiceTranscript)
+        if !model.voicePartial.isEmpty {
+            let gap = model.voiceTranscript.isEmpty ? "" : " "
+            text = text + Text(gap + model.voicePartial).foregroundColor(.secondary)
+        }
+        return text
     }
 }
 

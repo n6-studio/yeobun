@@ -55,6 +55,18 @@ struct MenuBarStatusJSON: Encodable {
     var offscreenItems: Int
 }
 
+struct VoiceStatusJSON: Encodable {
+    var listening: Bool
+    var locale: String
+    var hotkey: String
+    var silenceSeconds: Int
+    var typesText: Bool
+    var accessibility: Bool
+    /// "granted", "denied", or "" until the app has asked.
+    var microphone: String
+    var notice: String
+}
+
 struct MacStatusJSON: Encodable {
     var cpuPercent: Int
     var ramUsedBytes: UInt64
@@ -94,6 +106,7 @@ struct ToolsSnapshot: Encodable {
     var lid: LidStatusJSON
     var awake: AwakeStatusJSON
     var menubar: MenuBarStatusJSON
+    var voice: VoiceStatusJSON
     var mac: MacStatusJSON?
 }
 
@@ -107,6 +120,7 @@ enum StatusBuilder {
         let lid = tools.lid.hardwareSnapshot()
         let awake = tools.awake.hardwareSnapshot()
         let menuBar = tools.menuBar.hardwareSnapshot()
+        let voice = tools.voice.hardwareSnapshot()
         return ToolsSnapshot(
             keyboard: KeyboardStatusJSON(
                 locked: keyboard.locked,
@@ -137,6 +151,16 @@ enum StatusBuilder {
                 labelSize: menuBar.labelSize,
                 layout: menuBar.layout.rawValue,
                 offscreenItems: MenuBarOverflow.hiddenByMacOS().count
+            ),
+            voice: VoiceStatusJSON(
+                listening: voice.listening,
+                locale: voice.locale,
+                hotkey: voice.hotKey.display,
+                silenceSeconds: voice.silenceSeconds,
+                typesText: voice.typesText,
+                accessibility: AccessibilityAuth.hasPermission,
+                microphone: voice.microphone,
+                notice: voice.notice
             ),
             mac: includeMac ? macStatus() : nil
         )
