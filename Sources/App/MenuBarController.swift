@@ -11,12 +11,18 @@ final class MenuBarController: NSObject {
     private var displayRefreshWork: DispatchWorkItem?
     private var iconCancellables = Set<AnyCancellable>()
     private var hider: MenuBarHider?
+    private var visibilityObserver: NSKeyValueObservation?
+    private static let panelAutosave = "Yeobun.Panel"
 
     init(model: AppModel) {
         self.model = model
         statusItem = Self.makeStatusItem()
         super.init()
-        model.openPanel = { [weak self] in self?.showPopover() }
+        model.openPanel = { [weak self] view in self?.showPopover(from: view) }
+        model.isMainStatusItemHidden = { [weak self] in
+            guard let self else { return false }
+            return MenuBarOverflow.isOffMenuBar(self.statusItem)
+        }
 
         let host = NSHostingController(
             rootView: ToolsPanel()
@@ -33,6 +39,9 @@ final class MenuBarController: NSObject {
         observeDisplayChanges()
         observeActiveTools()
         hider = MenuBarHider(model: model)
+        DispatchQueue.main.async { [weak self] in
+            self?.statusItem.isVisible = true
+        }
     }
 
     deinit {
@@ -40,14 +49,28 @@ final class MenuBarController: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    func showPopover() {
-        guard let button = statusItem.button else { return }
+    func showPopover(from view: NSView? = nil) {
+        statusItem.isVisible = true
+        guard let button = view ?? preferredPanelAnchor else { return }
         model.restorePersistedTools()
         model.refreshAccessibility()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
         startEventMonitor()
+    }
+
+    /// Prefer the wrench; if macOS or the hider tucked it away, open from the chevron.
+    private var preferredPanelAnchor: NSView? {
+        if !MenuBarOverflow.isOffMenuBar(statusItem), let button = statusItem.button {
+            return button
+        }
+        if let chevron = hider?.panelAnchor,
+           let window = chevron.window,
+           MenuBarOverflow.placement(of: MenuBarOverflow.toCG(window.frame)) == .visible {
+            return chevron
+        }
+        return statusItem.button ?? hider?.panelAnchor
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -201,16 +224,28 @@ final class MenuBarController: NSObject {
     }
 
     private func configureStatusItem() {
-        statusItem.autosaveName = "Yeobun.StatusItem"
-        statusItem.isVisible = true
         if #available(macOS 13.0, *) {
             statusItem.behavior = []
         }
+        statusItem.isVisible = true
+        // After showing: assigning autosave first would restore a hidden state
+        // from a previous ⌘-drag off the bar, and this app has no Dock icon.
+        statusItem.autosaveName = Self.panelAutosave
+        observeVisibility()
         applyIcon()
         if let button = statusItem.button {
             button.target = self
             button.action = #selector(togglePopover(_:))
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        }
+    }
+
+    private func observeVisibility() {
+        visibilityObserver = statusItem.observe(\.isVisible, options: [.new]) { [weak self] item, _ in
+            guard let self, !item.isVisible else { return }
+            DispatchQueue.main.async {
+                self.statusItem.isVisible = true
+            }
         }
     }
 
@@ -271,7 +306,7 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func screenParametersChanged(_ notification: Notification) {
-        scheduleStatusItemRebuild()
+        scheduleIconRefresh()
     }
 
     @objc private func backingPropertiesChanged(_ notification: Notification) {
@@ -279,23 +314,15 @@ final class MenuBarController: NSObject {
         applyIcon()
     }
 
-    private func scheduleStatusItemRebuild() {
+    /// Redraw in place. Recreating the status item would drop it at the left
+    /// of the bar, which is the hidden side of the chevron.
+    private func scheduleIconRefresh() {
         displayRefreshWork?.cancel()
         let work = DispatchWorkItem { [weak self] in
-            self?.rebuildStatusItem()
+            self?.applyIcon()
         }
         displayRefreshWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: work)
-    }
-
-    private func rebuildStatusItem() {
-        if popover.isShown {
-            popover.performClose(nil)
-            stopEventMonitor()
-        }
-        NSStatusBar.system.removeStatusItem(statusItem)
-        statusItem = Self.makeStatusItem()
-        configureStatusItem()
     }
 
     private func startEventMonitor() {

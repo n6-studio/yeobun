@@ -65,6 +65,15 @@ enum MenuBarOverflow {
         return items.sorted { $0.bounds.minX < $1.bounds.minX }
     }
 
+    /// `true` when a status item is missing, off, or sitting outside the
+    /// visible stretch of the menu bar (tucked by macOS or by a hider).
+    static func isOffMenuBar(_ item: NSStatusItem) -> Bool {
+        guard item.isVisible, let window = item.button?.window, window.frame.width > 0.5 else {
+            return true
+        }
+        return placement(of: toCG(window.frame)) != .visible
+    }
+
     /// Items that are not fully inside a visible stretch of any menu bar.
     static func hiddenByMacOS() -> [MenuBarItemWindow] {
         let bands = visibleBands()

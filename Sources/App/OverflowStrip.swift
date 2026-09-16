@@ -159,7 +159,7 @@ struct OverflowTile: View {
         .buttonStyle(.plain)
         .onHover { hover.on = $0 }
         .animation(reduceMotion ? nil : Motion.hover, value: hover.on)
-        .help(item.element == nil ? "\(item.label) — Allow Accessibility to use this icon" : item.tooltip)
+        .help(item.helpText)
         .accessibilityLabel(item.label)
     }
 
@@ -211,20 +211,32 @@ private struct OverflowItemIcon: View {
 
     var body: some View {
         if let image = item.image {
-            Image(nsImage: image)
-                .resizable()
-                .interpolation(.high)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: iconSize, height: iconSize)
+            overflowImage(image, template: image.isTemplate)
         } else if let glyph = item.appIcon {
-            Image(nsImage: glyph)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: iconSize, height: iconSize)
+            overflowImage(glyph, template: false)
         } else {
             Image(systemName: "app.dashed")
                 .font(.system(size: max(12, iconSize * 0.6), weight: .medium))
                 .foregroundStyle(.secondary)
+                .frame(width: iconSize, height: iconSize)
+        }
+    }
+
+    @ViewBuilder
+    private func overflowImage(_ image: NSImage, template: Bool) -> some View {
+        if template {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .foregroundStyle(.primary)
+                .frame(width: iconSize, height: iconSize)
+        } else {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
                 .frame(width: iconSize, height: iconSize)
         }
     }

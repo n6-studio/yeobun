@@ -41,7 +41,7 @@ brew install --cask yeobun
 
 Homebrew 6 asks you to trust `n6-studio/tap` the first time. The one-line install trusts only this cask.
 
-Or download the disk image from the [latest GitHub release](https://github.com/n6-studio/yeobun/releases/latest) and drag **Yeobun** onto **Applications**. Open it, then look for the wrench in the menu bar. Drag the icon left if macOS tucks it behind the extra-items chevron.
+Or download the disk image from the [latest GitHub release](https://github.com/n6-studio/yeobun/releases/latest) and drag **Yeobun** onto **Applications**. Open it, then look for the wrench in the menu bar. ⌘-drag to reorder; Yeobun puts itself back if it is dragged off the bar, because there is no Dock icon.
 
 If Gatekeeper blocks it, right-click the app → Open. The release is signed locally, not notarized.
 
@@ -110,7 +110,7 @@ Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the li
 </tr>
 </table>
 
-A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). Click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
+A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). If Yeobun's own icon is among them, it is the first tile and opens the panel. Click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
 
 ⌘-drag icons to the left of the chevron and they leave the bar; they stay one chevron click away. **Layout** is a grid or a vertical list. **Icon size** and **Name size** set how those tiles draw.
 

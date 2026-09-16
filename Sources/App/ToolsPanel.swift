@@ -1154,7 +1154,7 @@ private struct MenuBarDetail: View {
             }
 
             GroupedPanel {
-                Text("⌘-drag icons left of the chevron to hide them. Click the chevron to show them.")
+                Text("⌘-drag icons left of the chevron to hide them. Click the chevron to show them. If Yeobun is hidden, it is the first tile.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

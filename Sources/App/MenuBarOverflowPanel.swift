@@ -20,6 +20,8 @@ struct OverflowItem: Identifiable, Equatable {
     var appIcon: NSImage?
     var pid: pid_t?
     var element: AXUIElement?
+    /// Opens Yeobun's panel instead of pressing a foreign status item.
+    var opensYeobun = false
 
     var label: String {
         if let appName { return appName }
@@ -27,10 +29,31 @@ struct OverflowItem: Identifiable, Equatable {
     }
 
     var tooltip: String {
+        if opensYeobun { return "Open Yeobun" }
         var parts = [label]
         if let detail, detail.caseInsensitiveCompare(label) != .orderedSame { parts.append(detail) }
         parts.append(placementLabel.lowercased())
         return parts.joined(separator: " — ")
+    }
+
+    /// Tile help: Yeobun's own entry does not need Accessibility.
+    var helpText: String {
+        if opensYeobun { return tooltip }
+        if element == nil { return "\(label) — Allow Accessibility to use this icon" }
+        return tooltip
+    }
+
+    /// First tile when our menu-bar icon is itself off the bar.
+    static func yeobunPanel() -> OverflowItem {
+        OverflowItem(
+            id: "yeobun-panel",
+            bounds: .zero,
+            placement: .offscreen,
+            image: MenuBarIcon.makeImage(mode: .logoOnly, tools: []),
+            appName: "Yeobun",
+            appIcon: NSApp.applicationIconImage,
+            opensYeobun: true
+        )
     }
 
     var placementLabel: String {
@@ -46,6 +69,7 @@ struct OverflowItem: Identifiable, Equatable {
             && lhs.bounds == rhs.bounds
             && (lhs.image == nil) == (rhs.image == nil)
             && lhs.appName == rhs.appName
+            && lhs.opensYeobun == rhs.opensYeobun
     }
 }
 
@@ -90,8 +114,15 @@ enum MenuBarOverflowResolver {
     /// Without Accessibility only the window list is available, which on
     /// macOS 26 misses off-screen items entirely.
     static func identify(windows: [MenuBarItemWindow]) -> [OverflowItem] {
+        // Skip our own windows: the spacer, chevron, and panel icon are
+        // not foreign extras. The panel icon is injected separately when
+        // it is off the bar, so a click can open Yeobun on screen.
+        let foreign = windows.filter { window in
+            window.ownerPID != ProcessInfo.processInfo.processIdentifier
+                && window.ownerName != "Yeobun"
+        }
         guard AccessibilityAuth.hasPermission else {
-            return windows.map { window in
+            return foreign.map { window in
                 OverflowItem(
                     id: "window-\(window.id)",
                     bounds: window.bounds,
@@ -104,7 +135,7 @@ enum MenuBarOverflowResolver {
         for extra in extrasByApp() {
             let placement = MenuBarOverflow.placement(of: extra.frame)
             guard placement != .visible else { continue }
-            let window = windows.first { $0.bounds.intersects(extra.frame.insetBy(dx: 2, dy: 2)) }
+            let window = foreign.first { $0.bounds.intersects(extra.frame.insetBy(dx: 2, dy: 2)) }
             items.append(OverflowItem(
                 id: "app-\(extra.app.processIdentifier)-\(extra.index)",
                 bounds: extra.frame,
@@ -173,6 +204,9 @@ enum MenuBarOverflowResolver {
     private static func extrasByApp() -> [Extra] {
         var result: [Extra] = []
         let me = ProcessInfo.processInfo.processIdentifier
+        // Own extras (wrench, chevron, spacer) stay out of the strip. The wrench
+        // is prepended on its own when it is off the bar, so a click can open
+        // the panel from the chevron instead of an off-screen button.
         for app in NSWorkspace.shared.runningApplications
         where app.activationPolicy != .prohibited
             && app.processIdentifier != me

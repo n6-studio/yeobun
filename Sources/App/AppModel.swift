@@ -82,7 +82,10 @@ final class AppModel: ObservableObject {
     @Published var screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
 
     /// Set by the status-item controller so the chevron's menu can open the panel.
-    var openPanel: (() -> Void)?
+    /// The optional view is a visible anchor when the main icon is off the bar.
+    var openPanel: ((NSView?) -> Void)?
+    /// True when the wrench is not in the visible menu bar.
+    var isMainStatusItemHidden: (() -> Bool)?
 
     @Published var loginItemNotice: String?
     @Published var statusCheckNotice: String?
@@ -623,7 +626,7 @@ final class AppModel: ObservableObject {
             let identified = MenuBarOverflowResolver.identify(windows: windows)
             DispatchQueue.main.async {
                 guard let self, epoch == self.overflowEpoch else { return }
-                self.overflowItems = identified
+                self.overflowItems = self.prefixedOverflow(identified)
                 self.overflowScanned = true
             }
             guard MenuBarOverflowResolver.screenRecordingGranted, !identified.isEmpty else { return }
@@ -631,7 +634,7 @@ final class AppModel: ObservableObject {
                 let captured = await MenuBarOverflowResolver.capture(identified)
                 await MainActor.run { [weak self] in
                     guard let self, epoch == self.overflowEpoch else { return }
-                    self.overflowItems = captured
+                    self.overflowItems = self.prefixedOverflow(captured)
                 }
             }
         }
@@ -643,8 +646,19 @@ final class AppModel: ObservableObject {
         overflowScanned = false
     }
 
+    /// Yeobun first when our own icon is off the bar, so the chevron still opens the panel.
+    private func prefixedOverflow(_ items: [OverflowItem]) -> [OverflowItem] {
+        let rest = items.filter { !$0.opensYeobun }
+        guard isMainStatusItemHidden?() == true else { return rest }
+        return [OverflowItem.yeobunPanel()] + rest
+    }
+
     /// Press the real item. Falls back to bringing its app forward.
     func activateOverflowItem(_ item: OverflowItem) {
+        if item.opensYeobun {
+            requestOpenPanel()
+            return
+        }
         if MenuBarOverflowResolver.press(item) { return }
         if let name = item.appName,
            let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) {
@@ -667,8 +681,8 @@ final class AppModel: ObservableObject {
         updateMenuBarStatus()
     }
 
-    func requestOpenPanel() {
-        openPanel?()
+    func requestOpenPanel(from view: NSView? = nil) {
+        openPanel?(view)
     }
 
     private func refreshMenuBarStatus() {

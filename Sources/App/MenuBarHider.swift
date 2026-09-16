@@ -26,6 +26,7 @@ final class MenuBarHider {
     private var layoutCheck: DispatchWorkItem?
     private var spinTimer: Timer?
     private var spinAngle: CGFloat = 0
+    private var chevronVisibleObserver: NSKeyValueObservation?
     private var overflow: MenuBarOverflowPanel!
     private let overflowMenu = MenuBarOverflowMenu()
     private let overflowQueue = DispatchQueue(label: "studio.n6.yeobun.overflow.menu", qos: .userInitiated)
@@ -72,6 +73,9 @@ final class MenuBarHider {
             .store(in: &cancellables)
     }
 
+    /// Visible chevron button, used as a popover anchor when the wrench is off the bar.
+    var panelAnchor: NSView? { chevron?.button }
+
     deinit {
         spinTimer?.invalidate()
         for observer in moveObservers {
@@ -93,6 +97,7 @@ final class MenuBarHider {
 
     private func apply(enabled: Bool) {
         guard enabled else {
+            chevronVisibleObserver = nil
             overflow.dismiss()
             chevron?.isVisible = false
             divider?.isVisible = false
@@ -102,6 +107,7 @@ final class MenuBarHider {
         guard let chevron, let divider else { return }
         chevron.isVisible = true
         divider.isVisible = true
+        observeChevronVisibility()
 
         let tuck = layoutIsValid
         if tuck {
@@ -149,6 +155,22 @@ final class MenuBarHider {
         divider = dividerItem
 
         observeMoves()
+        observeChevronVisibility()
+    }
+
+    /// The chevron is the fallback way to open Yeobun; do not let a ⌘-drag hide it.
+    private func observeChevronVisibility() {
+        guard model.menuBarHideEnabled else {
+            chevronVisibleObserver = nil
+            return
+        }
+        chevronVisibleObserver = chevron?.observe(\.isVisible, options: [.new]) { [weak self] item, _ in
+            guard let self, self.model.menuBarHideEnabled, !item.isVisible else { return }
+            DispatchQueue.main.async {
+                guard self.model.menuBarHideEnabled else { return }
+                self.chevron?.isVisible = true
+            }
+        }
     }
 
     private func observeMoves() {
@@ -187,7 +209,16 @@ final class MenuBarHider {
 
     /// Show the item's own menu under the pointer; items without a menu are
     /// pressed directly, which is all a popover-style item can offer.
+    /// Yeobun's own tile opens the panel from the chevron, on screen.
     private func useOverflowItem(_ item: OverflowItem) {
+        if item.opensYeobun {
+            let anchor = chevron?.button
+            overflow.dismiss()
+            DispatchQueue.main.async { [weak self] in
+                self?.model.requestOpenPanel(from: anchor)
+            }
+            return
+        }
         overflowQueue.async { [weak self] in
             let entries = MenuBarOverflowResolver.menuEntries(for: item)
             DispatchQueue.main.async {
@@ -260,7 +291,7 @@ final class MenuBarHider {
     }
 
     @objc private func openFromMenu() {
-        model.requestOpenPanel()
+        model.requestOpenPanel(from: chevron?.button)
     }
 
     @objc private func turnOffFromMenu() {
