@@ -46,8 +46,20 @@ enum CLICommands {
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .menuBar)
     }
 
-    static func voice(_ action: CLISwitch, json: Bool) throws {
-        try run(.voice, action)
+    static func voice(_ action: CLIVoiceAction, json: Bool) throws {
+        let tool = ToolRegistry.shared.voice
+        switch action {
+        case .status:
+            break
+        case .on:
+            tool.turn(true)
+        case .off:
+            tool.turn(false)
+        case .start:
+            try mapError { try tool.setListening(true) }
+        case .stop:
+            try mapError { try tool.setListening(false) }
+        }
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .voice)
     }
 
@@ -170,12 +182,14 @@ enum CLICommands {
     }
 
     private static func humanVoice(_ status: VoiceStatusJSON) -> String {
-        var parts = [status.listening ? "on" : "off"]
+        if !status.enabled { return "off" }
+        var parts = [status.listening ? "on  listening" : "on"]
         parts.append(status.hotkey)
         if !status.locale.isEmpty { parts.append(status.locale) }
         if status.microphone == "denied" { parts.append("needs Microphone") }
         if status.typesText, !status.accessibility { parts.append("needs Accessibility to type") }
         if !status.listening, !status.notice.isEmpty { parts.append(status.notice) }
+        if !VoiceTool.isAppRunning { parts.append("app not running") }
         return parts.joined(separator: "  ")
     }
 

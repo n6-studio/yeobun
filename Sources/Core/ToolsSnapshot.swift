@@ -56,6 +56,8 @@ struct MenuBarStatusJSON: Encodable {
 }
 
 struct VoiceStatusJSON: Encodable {
+    /// Master switch: the shortcut is registered and sessions are allowed.
+    var enabled: Bool
     var listening: Bool
     var locale: String
     var hotkey: String
@@ -153,6 +155,7 @@ enum StatusBuilder {
                 offscreenItems: MenuBarOverflow.hiddenByMacOS().count
             ),
             voice: VoiceStatusJSON(
+                enabled: voice.enabled,
                 listening: voice.listening,
                 locale: voice.locale,
                 hotkey: voice.hotKey.display,

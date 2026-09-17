@@ -125,9 +125,19 @@ final class MenuBarController: NSObject {
         menu.addItem(toggleItem(
             title: HomeTool.voice.title,
             action: #selector(toggleVoiceFromMenu),
-            isOn: model.voiceListening,
-            isEnabled: !model.voiceBusy
+            isOn: model.voiceEnabled,
+            isEnabled: true
         ))
+        if model.voiceEnabled {
+            let listening = model.voiceListening || model.voiceBusy
+            let item = NSMenuItem(
+                title: listening ? "Stop Listening" : "Start Listening",
+                action: #selector(toggleVoiceListeningFromMenu),
+                keyEquivalent: ""
+            )
+            item.indentationLevel = 1
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
         menu.addItem(menuBarDisplayItem())
         menu.addItem(menuBarStatsItem())
@@ -182,6 +192,10 @@ final class MenuBarController: NSObject {
     }
 
     @objc private func toggleVoiceFromMenu() {
+        model.toggleVoiceEnabled()
+    }
+
+    @objc private func toggleVoiceListeningFromMenu() {
         model.toggleVoice()
     }
 

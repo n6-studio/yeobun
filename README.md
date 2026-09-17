@@ -127,13 +127,13 @@ If the chevron ends up on the wrong side of the hidden icons, they stay shown an
 </tr>
 </table>
 
-Press **⌃⌥V** in any app and start talking. Yeobun turns speech into text **on this Mac** and types it where your cursor is, one phrase at a time. Press the shortcut again to stop, or leave a pause and it stops on its own (**Stop after silence**, 15 seconds to 1 minute, or never). The tile fills red while it listens, and the words also collect in the panel with **Copy** and **Clear**.
+Turn the tool on, then press **⌃⌥V** in any app and start talking. The tile is the master switch: while it is off the shortcut is not registered and nothing can listen. **Listening** is a separate switch that only works while the tool is on. Yeobun turns speech into text **on this Mac** and types it where your cursor is while you are still talking. When the recognizer changes its mind about a word, Yeobun backspaces over it and types the correction. Press the shortcut again to stop, or leave a pause and it stops on its own (**Stop after silence**, 15 seconds to 1 minute, or never). The tile reads **Listening** during a session, the right-click menu gains Start and Stop Listening, and the words also collect in the panel with **Copy** and **Clear**.
 
 **Language** defaults to the system language. On macOS 26 Yeobun uses the same on-device model as system dictation and downloads a language the first time you pick it. On macOS 14 and 15 it uses the older on-device recognizer, which needs the language downloaded under System Settings › Keyboard › Dictation. Nothing is sent to a server.
 
 Click **Shortcut** to record a different key combination. **Type into the front app** off keeps the words in the panel only.
 
-Needs **Microphone**. Typing into other apps needs **Accessibility**, the same permission as Scroll reverse; without it the transcript still shows in the panel. Text goes in through a paste, so the clipboard is put back right after.
+Needs **Microphone**. Typing into other apps needs **Accessibility**, the same permission as Scroll reverse; without it the transcript still shows in the panel. Text goes in as key presses, so the clipboard is left alone. Keep the cursor where it is until a phrase settles, because corrections backspace from there.
 
 ## Stats
 
@@ -191,6 +191,7 @@ yeobun lid off
 yeobun awake on --minutes 60
 yeobun menubar on
 yeobun voice on
+yeobun voice start
 yeobun mac
 ```
 
@@ -207,6 +208,6 @@ open ~/Applications/Yeobun.app
 
 - Built-in keyboard and Keep awake need no extra permission.
 - Scroll reverse needs Accessibility. Voice typing needs Microphone, plus Accessibility to type into other apps.
-- Voice typing runs only while the app is open. `yeobun voice on` asks the app to listen; the CLI never touches the microphone.
+- `yeobun voice on|off` is the master switch and is remembered. `yeobun voice start|stop` controls listening and needs the app open; the CLI never touches the microphone.
 - Lid awake asks for an administrator password once.
 - Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

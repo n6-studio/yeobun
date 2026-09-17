@@ -3,7 +3,7 @@ import Foundation
 /// One live voice-typing session. Main thread only.
 ///
 /// Owns the microphone and the recognizer, keeps the persisted session flag
-/// in step for the CLI, and hands finished phrases to the text inserter.
+/// in step for the CLI, and streams words to the live typer as they are heard.
 final class VoiceSession: VoiceDriver {
     enum Phase: Equatable {
         case idle
@@ -33,7 +33,7 @@ final class VoiceSession: VoiceDriver {
     private var silenceTimer: Timer?
     private var lastSpeech = Date()
     private var startTask: Task<Void, Never>?
-    private var typedInSession = false
+    private let typer = VoiceLiveTyper()
 
     var isListening: Bool { phase == .listening }
 
@@ -67,7 +67,7 @@ final class VoiceSession: VoiceDriver {
     func start() {
         if isListening || isBusy { return }
         ToolStateStore.shared.update { $0.voiceNotice = "" }
-        typedInSession = false
+        typer.reset()
         onPartial?("")
         phase = .requestingMicrophone
         startTask = Task { @MainActor [weak self] in
@@ -162,8 +162,11 @@ final class VoiceSession: VoiceDriver {
         switch event {
         case .partial(let text):
             guard source === engine else { return }
-            if !text.isEmpty { lastSpeech = Date() }
             onPartial?(text)
+            // An empty revision only clears the panel; the phrase that follows fixes the app.
+            guard !text.isEmpty else { return }
+            lastSpeech = Date()
+            if typesText { typer.update(text, commit: false) }
         case .phrase(let text):
             lastSpeech = Date()
             deliver(text)
@@ -182,11 +185,7 @@ final class VoiceSession: VoiceDriver {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         onPhrase?(text)
-        guard typesText else { return }
-        let spaced = typedInSession ? " " + text : text
-        if VoiceTextInserter.insert(spaced) {
-            typedInSession = true
-        }
+        if typesText { typer.update(text, commit: true) }
     }
 
     private func restartMicrophone() {

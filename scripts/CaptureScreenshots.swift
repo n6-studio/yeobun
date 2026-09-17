@@ -80,6 +80,7 @@ private func captureAll(to out: URL) throws {
     try writePair(name: "voice", to: out) { model, presentation in
         presentation.route = .voice
         seedHome(model)
+        model.voiceEnabled = true
         model.voiceListening = true
         model.voiceStatus = "Listening. Typing into the front app"
         model.voiceTranscript = "Ship the release notes tonight and move the retro to Thursday."
@@ -147,9 +148,10 @@ private func seedHome(_ model: AppModel) {
     model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize
     model.screenRecordingGranted = true
 
+    model.voiceEnabled = false
     model.voiceListening = false
     model.voiceBusy = false
-    model.voiceStatus = "Press ⌃⌥V anywhere to start"
+    model.voiceStatus = "Off. The shortcut and microphone are not in use"
     model.voiceTranscript = ""
     model.voicePartial = ""
     model.voiceError = nil

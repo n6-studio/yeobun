@@ -10,6 +10,11 @@ protocol VoiceDriver: AnyObject {
 
 /// Speech to text that types into the frontmost app.
 ///
+/// Two separate switches. **Enabled** is the persisted master switch: it
+/// arms the global shortcut and allows sessions. **Listening** is one live
+/// session, started by the shortcut, the panel, or `yeobun voice start`.
+/// Turning the tool off ends any session and unregisters the shortcut.
+///
 /// Only the menu-bar app captures audio, so the microphone prompt is
 /// attributed to Yeobun and not to whichever terminal ran the CLI. The
 /// persisted state carries the session flag, the preferences, and the last
@@ -23,6 +28,7 @@ final class VoiceTool: ToggleTool {
     weak var driver: VoiceDriver?
 
     struct Snapshot {
+        var enabled: Bool
         var listening: Bool
         var locale: String
         var hotKey: HotKey
@@ -34,7 +40,7 @@ final class VoiceTool: ToggleTool {
 
     func snapshot() throws -> ToggleSnapshot {
         ToggleSnapshot(
-            isOn: driver?.isListening ?? ToolStateStore.shared.current.voiceListening,
+            isOn: ToolStateStore.shared.current.voiceEnabled,
             remainingSeconds: nil,
             remainingMinutes: nil
         )
@@ -43,6 +49,7 @@ final class VoiceTool: ToggleTool {
     func hardwareSnapshot() -> Snapshot {
         let state = ToolStateStore.shared.current
         return Snapshot(
+            enabled: state.voiceEnabled,
             listening: driver?.isListening ?? state.voiceListening,
             locale: state.voiceLocale,
             hotKey: state.voiceHotKey,
@@ -54,11 +61,33 @@ final class VoiceTool: ToggleTool {
     }
 
     func setEnabled(_ enabled: Bool, options _: ToolOptions) throws {
+        turn(enabled)
+    }
+
+    /// The master switch. The app watches the store and arms or drops the shortcut.
+    func turn(_ enabled: Bool) {
+        if !enabled {
+            try? driver?.setListening(false)
+        }
+        ToolStateStore.shared.update { state in
+            state.voiceEnabled = enabled
+            if !enabled {
+                state.voiceNotice = ""
+            }
+        }
+        ToolStateStore.shared.notifyChange()
+    }
+
+    /// One live session. Only works while the tool is enabled.
+    func setListening(_ listening: Bool) throws {
+        if listening, !ToolStateStore.shared.current.voiceEnabled {
+            throw ToolError.failed("Voice typing is off. Turn it on first: yeobun voice on")
+        }
         if let driver {
-            try driver.setListening(enabled)
+            try driver.setListening(listening)
             return
         }
-        try askApp(enabled)
+        try askApp(listening)
     }
 
     func restore() {

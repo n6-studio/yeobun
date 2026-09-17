@@ -70,8 +70,16 @@ enum CLICommand {
     case lid(CLISwitch)
     case awake(CLISwitch)
     case menuBar(CLISwitch)
-    case voice(CLISwitch)
+    case voice(CLIVoiceAction)
     case mac
+}
+
+enum CLIVoiceAction {
+    case on
+    case off
+    case start
+    case stop
+    case status
 }
 
 enum CLISwitch {

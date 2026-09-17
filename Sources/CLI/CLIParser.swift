@@ -26,6 +26,8 @@ enum CLIParser {
       yeobun menubar status [--json]
       yeobun voice on [--json]
       yeobun voice off [--json]
+      yeobun voice start [--json]
+      yeobun voice stop [--json]
       yeobun voice status [--json]
       yeobun mac [--json]
 
@@ -34,7 +36,8 @@ enum CLIParser {
     lid       Lid awake
     awake     Keep awake
     menubar   Hidden icons
-    voice     Voice typing (the app must be running; it types into the frontmost app)
+    voice     Voice typing. on/off arms or disables the tool and its shortcut;
+              start/stop controls listening (needs on, and the app running)
     mac       This Mac
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
@@ -81,7 +84,7 @@ enum CLIParser {
         case "menubar":
             return CLIRequest(command: .menuBar(try parseSwitch(Array(tokens.dropFirst()), tool: .menuBar)), json: json)
         case "voice":
-            return CLIRequest(command: .voice(try parseSwitch(Array(tokens.dropFirst()), tool: .voice)), json: json)
+            return CLIRequest(command: .voice(try parseVoice(Array(tokens.dropFirst()))), json: json)
         default:
             throw CLIError.usage("Unknown command: \(first)")
         }
@@ -102,6 +105,20 @@ enum CLIParser {
             return try parseOn(Array(tokens.dropFirst()), tool: tool)
         default:
             throw CLIError.usage("Unknown action: \(action) (expected on, off, or status)")
+        }
+    }
+
+    private static func parseVoice(_ tokens: [String]) throws -> CLIVoiceAction {
+        guard let action = tokens.first else { return .status }
+        guard tokens.count == 1 else { throw CLIError.usage("Unexpected arguments for voice \(action).") }
+        switch action {
+        case "status": return .status
+        case "on": return .on
+        case "off": return .off
+        case "start": return .start
+        case "stop": return .stop
+        default:
+            throw CLIError.usage("Unknown action: \(action) (expected on, off, start, stop, or status)")
         }
     }
 

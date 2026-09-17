@@ -76,6 +76,9 @@ final class AppModel: ObservableObject {
     }
     @Published var overflowStripOpen = false
 
+    /// Master switch: arms the shortcut and allows sessions.
+    @Published var voiceEnabled = false
+    /// One live session. Only possible while `voiceEnabled`.
     @Published var voiceListening = false
     @Published var voiceBusy = false
     @Published var voiceStatus = "Off"
@@ -95,7 +98,7 @@ final class AppModel: ObservableObject {
         didSet {
             guard voiceHotKey != oldValue else { return }
             ToolStateStore.shared.update { $0.voiceHotKey = voiceHotKey }
-            voiceHotKeys.register(voiceHotKey)
+            syncVoiceHotKey()
             refreshVoiceStatus()
         }
     }
@@ -219,6 +222,7 @@ final class AppModel: ObservableObject {
         menuBarStripIconSize = sizes.icon
         menuBarStripLabelSize = sizes.label
         menuBarStripLayout = state.menuBarStripLayout
+        voiceEnabled = state.voiceEnabled
         voiceLocale = state.voiceLocale
         voiceHotKey = state.voiceHotKey
         voiceSilenceSeconds = state.voiceSilenceSeconds
@@ -1264,7 +1268,24 @@ final class AppModel: ObservableObject {
     // MARK: - Voice typing
 
     var voiceTileStatus: String {
-        voiceListening ? "On" : "Off"
+        if !voiceEnabled { return "Off" }
+        return voiceListening ? "Listening" : "On"
+    }
+
+    func toggleVoiceEnabled() {
+        setVoiceEnabled(!voiceEnabled)
+    }
+
+    /// The master switch. Off ends any session and drops the global shortcut.
+    func setVoiceEnabled(_ enabled: Bool) {
+        voiceError = nil
+        if !enabled {
+            voiceSession.stop()
+        }
+        voiceEnabled = enabled
+        tools.voice.turn(enabled)
+        syncVoiceHotKey()
+        refreshVoiceStatus()
     }
 
     var voiceHasTranscript: Bool {
@@ -1272,11 +1293,13 @@ final class AppModel: ObservableObject {
     }
 
     func toggleVoice() {
+        guard voiceEnabled else { return }
         voiceError = nil
         voiceSession.toggle()
     }
 
     func setVoiceListening(_ listening: Bool) {
+        guard voiceEnabled || !listening else { return }
         voiceError = nil
         if listening {
             voiceSession.start()
@@ -1305,7 +1328,16 @@ final class AppModel: ObservableObject {
         if recording {
             voiceHotKeys.unregister()
         } else {
+            syncVoiceHotKey()
+        }
+    }
+
+    /// The shortcut exists only while the tool is on.
+    private func syncVoiceHotKey() {
+        if voiceEnabled {
             voiceHotKeys.register(voiceHotKey)
+        } else {
+            voiceHotKeys.unregister()
         }
     }
 
@@ -1346,7 +1378,7 @@ final class AppModel: ObservableObject {
         voiceHotKeys.onPress = { [weak self] in
             self?.toggleVoice()
         }
-        voiceHotKeys.register(voiceHotKey)
+        syncVoiceHotKey()
         voiceObserver = DistributedNotificationCenter.default().addObserver(
             forName: YeobunPaths.voiceCommandNotification,
             object: nil,
@@ -1381,6 +1413,10 @@ final class AppModel: ObservableObject {
     }
 
     private func refreshVoiceStatus() {
+        guard voiceEnabled else {
+            voiceStatus = "Off. The shortcut and microphone are not in use"
+            return
+        }
         switch voiceSession.phase {
         case .idle, .failed:
             voiceStatus = "Press \(voiceHotKey.display) anywhere to start"
@@ -1450,6 +1486,14 @@ final class AppModel: ObservableObject {
             ? state.awakeMinutes
             : awakeMinutes
         suppressAwakeRestart = false
+        if state.voiceEnabled != voiceEnabled {
+            if !state.voiceEnabled {
+                voiceSession.stop()
+            }
+            voiceEnabled = state.voiceEnabled
+            syncVoiceHotKey()
+            refreshVoiceStatus()
+        }
         voiceLocale = state.voiceLocale
         voiceHotKey = state.voiceHotKey
         voiceSilenceSeconds = state.voiceSilenceSeconds

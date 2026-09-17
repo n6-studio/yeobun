@@ -294,12 +294,12 @@ private struct HomeGrid: View {
             ToolTile(
                 title: tool.title,
                 status: model.voiceTileStatus,
-                isOn: model.voiceListening,
+                isOn: model.voiceEnabled,
                 isBusy: model.voiceBusy,
                 outline: tool.outline,
                 fill: tool.fill,
                 accent: tool.accent,
-                onToggle: { model.toggleVoice() },
+                onToggle: { model.toggleVoiceEnabled() },
                 action: { presentation.open(.voice) }
             )
         case .machine:
@@ -1229,9 +1229,9 @@ private struct VoiceDetail: View {
                     StateSymbol(
                         outline: "mic",
                         fill: "mic.fill",
-                        isActive: model.voiceListening
+                        isActive: model.voiceEnabled
                     )
-                    .foregroundStyle(model.voiceListening ? ModuleColor.voice : .primary)
+                    .foregroundStyle(model.voiceEnabled ? ModuleColor.voice : .primary)
 
                     VStack(alignment: .leading, spacing: 1) {
                         Text(HomeTool.voice.title)
@@ -1242,13 +1242,32 @@ private struct VoiceDetail: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
+                    Toggle(
+                        HomeTool.voice.title,
+                        isOn: Binding(
+                            get: { model.voiceEnabled },
+                            set: { model.setVoiceEnabled($0) }
+                        )
+                    )
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                }
+                .stagger(index: 0, generation: presentation.generation)
+
+                Divider()
+
+                HStack {
+                    Text("Listening")
+                        .font(.system(size: 13))
+                    Spacer(minLength: 8)
                     if model.voiceBusy {
                         ProgressView()
                             .controlSize(.small)
                             .accessibilityLabel("Starting")
                     }
                     Toggle(
-                        HomeTool.voice.title,
+                        "Listening",
                         isOn: Binding(
                             get: { model.voiceListening || model.voiceBusy },
                             set: { model.setVoiceListening($0) }
@@ -1257,8 +1276,9 @@ private struct VoiceDetail: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .labelsHidden()
+                    .disabled(!model.voiceEnabled)
                 }
-                .stagger(index: 0, generation: presentation.generation)
+                .stagger(index: 1, generation: presentation.generation)
 
                 if let error = model.voiceError {
                     Text(error)
@@ -1308,7 +1328,7 @@ private struct VoiceDetail: View {
                     }
                     .frame(minHeight: 44, maxHeight: 120)
                 }
-                .stagger(index: 1, generation: presentation.generation)
+                .stagger(index: 2, generation: presentation.generation)
             }
 
             GroupedPanel {
@@ -1326,7 +1346,7 @@ private struct VoiceDetail: View {
                     .controlSize(.small)
                     .frame(maxWidth: 160)
                 }
-                .stagger(index: 2, generation: presentation.generation)
+                .stagger(index: 3, generation: presentation.generation)
 
                 HStack {
                     Text("Shortcut")
@@ -1336,7 +1356,7 @@ private struct VoiceDetail: View {
                         model.setVoiceShortcutRecording(recording)
                     }
                 }
-                .stagger(index: 3, generation: presentation.generation)
+                .stagger(index: 4, generation: presentation.generation)
 
                 HStack {
                     Text("Stop after silence")
@@ -1351,7 +1371,7 @@ private struct VoiceDetail: View {
                     .pickerStyle(.menu)
                     .controlSize(.small)
                 }
-                .stagger(index: 4, generation: presentation.generation)
+                .stagger(index: 5, generation: presentation.generation)
 
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
@@ -1367,7 +1387,7 @@ private struct VoiceDetail: View {
                         .controlSize(.small)
                         .labelsHidden()
                 }
-                .stagger(index: 5, generation: presentation.generation)
+                .stagger(index: 6, generation: presentation.generation)
             }
         }
     }

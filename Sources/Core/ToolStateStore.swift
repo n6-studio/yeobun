@@ -19,6 +19,8 @@ struct ToolState: Codable, Equatable {
     var menuBarStripIconSize: Int = 24
     var menuBarStripLabelSize: Int = 9
     var menuBarStripLayout: MenuBarStripLayout = .grid
+    /// Master switch. Off means no shortcut is registered and nothing can listen.
+    var voiceEnabled: Bool = false
     /// Written by the app while a voice session is live; the CLI only reads it.
     var voiceListening: Bool = false
     /// Locale identifier, empty for the system language.
@@ -59,6 +61,7 @@ struct ToolState: Codable, Equatable {
         let sizes = MenuBarTool.resolvedSizes(icon: menuBarStripIconSize, label: menuBarStripLabelSize)
         menuBarStripIconSize = sizes.icon
         menuBarStripLabelSize = sizes.label
+        voiceEnabled = try container.decodeIfPresent(Bool.self, forKey: .voiceEnabled) ?? false
         voiceListening = try container.decodeIfPresent(Bool.self, forKey: .voiceListening) ?? false
         voiceLocale = try container.decodeIfPresent(String.self, forKey: .voiceLocale) ?? ""
         voiceHotKey = try container.decodeIfPresent(HotKey.self, forKey: .voiceHotKey) ?? .defaultVoice
