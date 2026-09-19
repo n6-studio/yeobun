@@ -117,6 +117,13 @@ final class AppModel: ObservableObject {
             refreshVoiceStatus()
         }
     }
+    @Published var voiceVocabulary: [VoiceTerm] {
+        didSet {
+            guard voiceVocabulary != oldValue else { return }
+            ToolStateStore.shared.update { $0.voiceVocabulary = voiceVocabulary }
+            voiceSession.vocabulary = voiceVocabulary
+        }
+    }
     let voiceSilenceChoices = VoiceTool.silenceChoices
 
     /// Icons macOS pushed out of the bar, found on the last peek.
@@ -227,6 +234,7 @@ final class AppModel: ObservableObject {
         voiceHotKey = state.voiceHotKey
         voiceSilenceSeconds = state.voiceSilenceSeconds
         voiceTypesText = state.voiceTypesText
+        voiceVocabulary = state.voiceVocabulary
         if defaults.object(forKey: Keys.launchAtLogin) == nil {
             launchAtLogin = true
             defaults.set(true, forKey: Keys.launchAtLogin)
@@ -1323,6 +1331,17 @@ final class AppModel: ObservableObject {
         pasteboard.setString(text, forType: .string)
     }
 
+    /// `soundsLike` is a comma-separated list of what the recognizer writes instead.
+    func addVoiceTerm(_ text: String, soundsLike: String) {
+        let term = VoiceTerm(text: VoiceVocabulary.tidy(text), soundsLike: VoiceVocabulary.aliases(from: soundsLike))
+        guard !term.text.isEmpty else { return }
+        voiceVocabulary = VoiceVocabulary.adding(term, to: voiceVocabulary)
+    }
+
+    func removeVoiceTerm(_ term: VoiceTerm) {
+        voiceVocabulary = VoiceVocabulary.removing(term.text, from: voiceVocabulary)
+    }
+
     /// The recorder swallows the next key press, so the live shortcut steps aside.
     func setVoiceShortcutRecording(_ recording: Bool) {
         if recording {
@@ -1365,6 +1384,7 @@ final class AppModel: ObservableObject {
         voiceSession.localeIdentifier = voiceLocale
         voiceSession.silenceSeconds = voiceSilenceSeconds
         voiceSession.typesText = voiceTypesText
+        voiceSession.vocabulary = voiceVocabulary
         voiceSession.onPhase = { [weak self] phase in
             self?.applyVoicePhase(phase)
         }
@@ -1498,6 +1518,7 @@ final class AppModel: ObservableObject {
         voiceHotKey = state.voiceHotKey
         voiceSilenceSeconds = state.voiceSilenceSeconds
         voiceTypesText = state.voiceTypesText
+        voiceVocabulary = state.voiceVocabulary
         refreshKeyboardStatus(alignBacklight: true)
         refreshLidStatus()
         restoreAwakeIfNeeded()

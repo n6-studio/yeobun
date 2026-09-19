@@ -1221,6 +1221,8 @@ private struct MenuBarDetail: View {
 private struct VoiceDetail: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
+    @State private var newTerm = ""
+    @State private var newSoundsLike = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1389,7 +1391,105 @@ private struct VoiceDetail: View {
                 }
                 .stagger(index: 6, generation: presentation.generation)
             }
+
+            GroupedPanel {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("Vocabulary")
+                            .font(.system(size: 13))
+                        Spacer(minLength: 8)
+                        if !model.voiceVocabulary.isEmpty {
+                            Text("\(model.voiceVocabulary.count)")
+                                .font(.system(size: 11))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    vocabularyField("Word or term", text: $newTerm)
+                    HStack(spacing: 6) {
+                        vocabularyField("Sounds like, optional", text: $newSoundsLike)
+                        Button {
+                            addTerm()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .controlSize(.small)
+                        .disabled(newTerm.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .accessibilityLabel("Add to vocabulary")
+                    }
+                }
+                .stagger(index: 7, generation: presentation.generation)
+
+                if !model.voiceVocabulary.isEmpty {
+                    Divider()
+
+                    // The popover sizes to its content, so a long list scrolls at a fixed height.
+                    Group {
+                        if model.voiceVocabulary.count <= 4 {
+                            vocabularyList
+                        } else {
+                            ScrollView(.vertical) {
+                                vocabularyList
+                            }
+                            .frame(height: 140)
+                        }
+                    }
+                    .stagger(index: 8, generation: presentation.generation)
+                }
+            }
         }
+    }
+
+    private var vocabularyList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(model.voiceVocabulary) { term in
+                vocabularyRow(term)
+            }
+        }
+    }
+
+    private func vocabularyField(_ prompt: String, text: Binding<String>) -> some View {
+        TextField(prompt, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(ModuleColor.offFill)
+            )
+            .onSubmit { addTerm() }
+    }
+
+    private func vocabularyRow(_ term: VoiceTerm) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(term.text)
+                    .font(.system(size: 12, weight: .medium))
+                if !term.soundsLike.isEmpty {
+                    Text(term.soundsLike.joined(separator: ", "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            Button {
+                model.removeVoiceTerm(term)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove \(term.text)")
+        }
+    }
+
+    private func addTerm() {
+        guard !newTerm.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        model.addVoiceTerm(newTerm, soundsLike: newSoundsLike)
+        newTerm = ""
+        newSoundsLike = ""
     }
 
     private var transcriptText: Text {

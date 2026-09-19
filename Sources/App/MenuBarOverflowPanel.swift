@@ -3,6 +3,12 @@ import ApplicationServices
 import ScreenCaptureKit
 import SwiftUI
 
+/// Left or right click on a hidden-icon tile.
+enum OverflowClick {
+    case left
+    case right
+}
+
 /// One icon that is not in the menu bar right now, ready to draw and use.
 struct OverflowItem: Identifiable, Equatable {
     var id: String
@@ -191,6 +197,31 @@ enum MenuBarOverflowResolver {
         press(item.element)
     }
 
+    /// Right-click equivalent. The menu appears at the item's frame, so the
+    /// caller should bring an off-screen item on screen first.
+    static func showMenu(_ item: OverflowItem) -> Bool {
+        guard let element = item.element else { return false }
+        return AXUIElementPerformAction(element, kAXShowMenuAction as CFString) == .success
+    }
+
+    /// Synthesize a click at the item's current frame, when that frame is in
+    /// the menu bar. Used after temporarily showing a hidden item.
+    static func click(_ item: OverflowItem, right: Bool) -> Bool {
+        guard let element = item.element, let frame = frame(of: element) else { return false }
+        guard MenuBarOverflow.placement(of: frame) == .visible else { return false }
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let button: CGMouseButton = right ? .right : .left
+        let downType: CGEventType = right ? .rightMouseDown : .leftMouseDown
+        let upType: CGEventType = right ? .rightMouseUp : .leftMouseUp
+        guard
+            let down = CGEvent(mouseEventSource: nil, mouseType: downType, mouseCursorPosition: point, mouseButton: button),
+            let up = CGEvent(mouseEventSource: nil, mouseType: upType, mouseCursorPosition: point, mouseButton: button)
+        else { return false }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+        return true
+    }
+
     // MARK: - Private
 
     private struct Extra {
@@ -315,17 +346,46 @@ enum MenuBarOverflowResolver {
 /// entry presses the real one through Accessibility, so the item works
 /// without ever being on screen.
 final class MenuBarOverflowMenu: NSObject, NSMenuDelegate {
-    private var completion: (() -> Void)?
+    private var onChoose: (() -> Void)?
+    private var didChoose = false
+    private var didNotify = false
 
     /// Returns `false` when the item has no menu; callers then press it directly.
-    func present(_ entries: [OverflowMenuEntry], title: String, completion: @escaping () -> Void) -> Bool {
+    /// Pass the opening event when it is still the current event so a
+    /// right-click menu tracks like a normal context menu.
+    /// `onChoose` runs when an entry is selected, not when the menu is dismissed.
+    func present(
+        _ entries: [OverflowMenuEntry],
+        title: String,
+        in view: NSView? = nil,
+        event: NSEvent? = nil,
+        onChoose: @escaping () -> Void
+    ) -> Bool {
         guard !entries.isEmpty else { return false }
-        self.completion = completion
+        self.onChoose = onChoose
+        didChoose = false
+        didNotify = false
         let menu = NSMenu(title: title)
         menu.autoenablesItems = false
         menu.delegate = self
         fill(menu, with: entries)
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        if let view, let event,
+           event.type == .rightMouseDown || event.type == .leftMouseDown,
+           NSApp.currentEvent?.eventNumber == event.eventNumber {
+            NSMenu.popUpContextMenu(menu, with: event, for: view)
+        } else {
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+        }
+        // AppKit may send the item action during popUp or just after it
+        // returns. Cover both, but only notify once.
+        if didChoose {
+            notifyChosen()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.didChoose else { return }
+                self.notifyChosen()
+            }
+        }
         return true
     }
 
@@ -350,13 +410,26 @@ final class MenuBarOverflowMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func choose(_ sender: NSMenuItem) {
-        guard let element = sender.representedObject else { return }
-        _ = MenuBarOverflowResolver.press((element as! AXUIElement))
+        didChoose = true
+        if let object = sender.representedObject {
+            _ = MenuBarOverflowResolver.press((object as! AXUIElement))
+        }
+        notifyChosen()
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        let done = completion
-        completion = nil
+        // Action can arrive after close. Delay the cancel so choose() wins.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.didChoose else { return }
+            self.onChoose = nil
+        }
+    }
+
+    private func notifyChosen() {
+        guard !didNotify else { return }
+        didNotify = true
+        let done = onChoose
+        onChoose = nil
         DispatchQueue.main.async { done?() }
     }
 }
@@ -366,15 +439,19 @@ final class MenuBarOverflowPanel {
     private var panel: NSPanel?
     private var outsideClick: Any?
     private var escape: Any?
-    private let onPress: (OverflowItem) -> Void
+    private let onClick: (OverflowItem, OverflowClick) -> Void
     private let onDismiss: () -> Void
 
-    init(onPress: @escaping (OverflowItem) -> Void, onDismiss: @escaping () -> Void) {
-        self.onPress = onPress
+    init(onClick: @escaping (OverflowItem, OverflowClick) -> Void, onDismiss: @escaping () -> Void) {
+        self.onClick = onClick
         self.onDismiss = onDismiss
     }
 
     var isShown: Bool { panel?.isVisible ?? false }
+    var hostView: NSView? { panel?.contentView }
+    /// While a foreign item's own menu is up, clicks go to that app and would
+    /// otherwise look like an outside click.
+    var ignoreOutsideClicks = false
 
     func show(
         items: [OverflowItem],
@@ -384,14 +461,14 @@ final class MenuBarOverflowPanel {
         labelSize: CGFloat,
         anchor: NSRect
     ) {
-        let host = NSHostingView(rootView: OverflowStrip(
+        let host = OverflowHostingView(rootView: OverflowStrip(
             items: items,
             accessibility: accessibility,
             layout: layout,
             iconSize: iconSize,
             labelSize: labelSize,
-            onPress: { [weak self] item in
-                self?.onPress(item)
+            onClick: { [weak self] item, click in
+                self?.onClick(item, click)
             }
         ))
         host.sizingOptions = [.intrinsicContentSize]
@@ -441,8 +518,19 @@ final class MenuBarOverflowPanel {
 
     private func startMonitors() {
         stopMonitors()
-        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.dismiss()
+        outsideClick = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .leftMouseUp]) { [weak self] event in
+            guard let self else { return }
+            if self.ignoreOutsideClicks {
+                // Foreign menu: the click that picks an entry is global.
+                // Wait for mouse up so the click is delivered first.
+                if event.type == .leftMouseUp {
+                    DispatchQueue.main.async { [weak self] in self?.dismiss() }
+                }
+                return
+            }
+            if event.type == .leftMouseDown || event.type == .rightMouseDown {
+                self.dismiss()
+            }
         }
         escape = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             if event.keyCode == 53 {
@@ -463,4 +551,10 @@ final class MenuBarOverflowPanel {
             self.escape = nil
         }
     }
+}
+
+/// First mouse must land on the tile, including a right click, without a
+/// focus click first. The panel does not become key.
+private final class OverflowHostingView: NSHostingView<OverflowStrip> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

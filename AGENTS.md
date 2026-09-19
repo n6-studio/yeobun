@@ -4,6 +4,8 @@ macOS menu-bar app by N6 Studio. SwiftUI inside an AppKit `NSStatusItem` + `NSPo
 
 Agents should drive tools with the `yeobun` CLI (`yeobun --help`, `--json`), not by clicking the popover. GUI rules below apply only to the panel.
 
+`scripts/CaptureScreenshots.swift` points itself at a throwaway home before it seeds the model, because seeding persists tool state. Keep it that way.
+
 Build with `./build.sh`. It picks the SDK that matches the running macOS when the Command Line Tools default to a newer beta SDK (a beta SwiftUI turns `@State` into a macro the CLT does not ship). Set `SDKROOT` to override.
 
 ## UI style — Control Center modules
@@ -30,7 +32,7 @@ Mimic **macOS Control Center**. Stay on SwiftUI + AppKit. Do not add a third-par
 - Voice typing: `Color.red`
 - This Mac: always informational (never an On fill). Show **CPU and RAM** on the tile.
 - Battery, Network, Storage: always informational. Battery warns when charge is low; Storage warns when the disk is full.
-- Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Voice typing On = armed (shortcut registered); it reads `Listening` during a session and shows a spinner while it asks for the microphone or loads a language. Listening has its own switch in the detail view. Keep awake shows remaining time when a duration is set.
+- Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Voice typing On = armed (shortcut registered); it reads `Listening` during a session and shows a spinner while it asks for the microphone or loads a language. Listening has its own switch in the detail view. Its Vocabulary group lists terms (hints for the recognizer) with optional "sounds like" rewrites; the same list is `yeobun voice vocab`. Keep awake shows remaining time when a duration is set.
 - Hover: brighten the tile fill (`offFillHover`, or a white wash when On). Icon circles brighten and scale to `1.06`. Press: `scale(0.96)`, 150ms, `cubic-bezier(0.2, 0, 0, 1)`.
 - Icons: outline when off, fill when on; cross-fade (scale 0.25→1, opacity, blur 4→0). Sit in a 30pt circle (`Radius.glyph`). Off disk `primary.opacity(0.14)`; on disk white 22% over the module fill.
 

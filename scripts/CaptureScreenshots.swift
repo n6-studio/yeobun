@@ -4,6 +4,12 @@ import SwiftUI
 @main
 enum CaptureScreenshots {
     static func main() {
+        // Seeding the model persists tool state. Keep it out of the real
+        // Application Support by pointing this process at a throwaway home.
+        let home = NSTemporaryDirectory() + "yeobun-screenshots-home"
+        try? FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
+        setenv("CFFIXED_USER_HOME", home, 1)
+
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
 
@@ -85,6 +91,11 @@ private func captureAll(to out: URL) throws {
         model.voiceStatus = "Listening. Typing into the front app"
         model.voiceTranscript = "Ship the release notes tonight and move the retro to Thursday."
         model.voicePartial = "Also remind"
+        model.voiceVocabulary = [
+            VoiceTerm(text: "kubectl", soundsLike: ["cube control", "cube cuddle"]),
+            VoiceTerm(text: "PostHog"),
+            VoiceTerm(text: "Supabase", soundsLike: ["super base"])
+        ]
     }
     try writePair(name: "this-mac", to: out) { model, presentation in
         presentation.route = .machine

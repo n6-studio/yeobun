@@ -19,7 +19,7 @@ struct OverflowStrip: View {
     var layout: MenuBarStripLayout = .grid
     var iconSize: CGFloat = 24
     var labelSize: CGFloat = 9
-    let onPress: (OverflowItem) -> Void
+    let onClick: (OverflowItem, OverflowClick) -> Void
 
     var body: some View {
         Group {
@@ -61,7 +61,7 @@ struct OverflowStrip: View {
                             labelSize: labelSize,
                             width: tileWidth,
                             height: tileHeight
-                        ) { onPress(item) }
+                        ) { onClick(item, $0) }
                     }
                 }
             }
@@ -79,7 +79,7 @@ struct OverflowStrip: View {
                     labelSize: labelSize,
                     width: panelWidth,
                     height: listRowHeight
-                ) { onPress(item) }
+                ) { onClick(item, $0) }
             }
         }
         .frame(width: panelWidth, alignment: .leading)
@@ -141,26 +141,32 @@ struct OverflowTile: View {
     let labelSize: CGFloat
     let width: CGFloat
     let height: CGFloat
-    let action: () -> Void
+    let onClick: (OverflowClick) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var hover = HoverFlag()
 
     var body: some View {
-        Button(action: action) {
-            content
-                .padding(.horizontal, layout == .list ? 6 : 2)
-                .frame(width: width, height: height, alignment: layout == .list ? .leading : .center)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hover.on ? Color.primary.opacity(0.12) : Color.clear)
+        content
+            .padding(.horizontal, layout == .list ? 6 : 2)
+            .frame(width: width, height: height, alignment: layout == .list ? .leading : .center)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(hover.on ? Color.primary.opacity(0.12) : Color.clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                OverflowClickCatcher(
+                    onLeft: { onClick(.left) },
+                    onRight: { onClick(.right) },
+                    onHover: { hover.on = $0 }
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { hover.on = $0 }
-        .animation(reduceMotion ? nil : Motion.hover, value: hover.on)
-        .help(item.helpText)
-        .accessibilityLabel(item.label)
+            }
+            .animation(reduceMotion ? nil : Motion.hover, value: hover.on)
+            .help(item.helpText)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(item.label)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(named: "Right click") { onClick(.right) }
     }
 
     private var caption: String {
@@ -239,5 +245,83 @@ private struct OverflowItemIcon: View {
                 .aspectRatio(contentMode: .fit)
                 .frame(width: iconSize, height: iconSize)
         }
+    }
+}
+
+/// SwiftUI `Button` only takes a left click. Status items distinguish left
+/// and right, so tiles use an AppKit view that reports both.
+private struct OverflowClickCatcher: NSViewRepresentable {
+    let onLeft: () -> Void
+    let onRight: () -> Void
+    let onHover: (Bool) -> Void
+
+    func makeNSView(context: Context) -> OverflowClickView {
+        let view = OverflowClickView()
+        view.setAccessibilityElement(false)
+        view.onLeft = onLeft
+        view.onRight = onRight
+        view.onHover = onHover
+        return view
+    }
+
+    func updateNSView(_ view: OverflowClickView, context: Context) {
+        view.onLeft = onLeft
+        view.onRight = onRight
+        view.onHover = onHover
+    }
+}
+
+final class OverflowClickView: NSView {
+    var onLeft: () -> Void = {}
+    var onRight: () -> Void = {}
+    var onHover: (Bool) -> Void = { _ in }
+
+    private var lastLeftDown = Date.distantPast
+    private var lastLeftLocation = CGPoint.zero
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHover(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHover(false)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        lastLeftDown = Date()
+        lastLeftLocation = NSEvent.mouseLocation
+        if event.modifierFlags.contains(.control) {
+            onRight()
+        }
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        onRight()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !event.modifierFlags.contains(.control) else { return }
+        guard isClick(since: lastLeftDown, from: lastLeftLocation) else { return }
+        onLeft()
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? { nil }
+
+    private func isClick(since down: Date, from location: CGPoint) -> Bool {
+        Date().timeIntervalSince(down) < 0.5
+            && hypot(NSEvent.mouseLocation.x - location.x, NSEvent.mouseLocation.y - location.y) < 5
     }
 }

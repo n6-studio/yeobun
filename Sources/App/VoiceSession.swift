@@ -21,6 +21,14 @@ final class VoiceSession: VoiceDriver {
     var localeIdentifier = ""
     var silenceSeconds = VoiceTool.defaultSilenceSeconds
     var typesText = true
+    /// Takes effect right away, also on a session that is already listening.
+    var vocabulary: [VoiceTerm] = [] {
+        didSet {
+            guard vocabulary != oldValue else { return }
+            corrector = VoiceCorrector(terms: vocabulary)
+            engine?.vocabulary = vocabulary.map(\.text)
+        }
+    }
 
     private(set) var phase: Phase = .idle {
         didSet {
@@ -34,6 +42,7 @@ final class VoiceSession: VoiceDriver {
     private var lastSpeech = Date()
     private var startTask: Task<Void, Never>?
     private let typer = VoiceLiveTyper()
+    private var corrector = VoiceCorrector(terms: [])
 
     var isListening: Bool { phase == .listening }
 
@@ -112,6 +121,7 @@ final class VoiceSession: VoiceDriver {
         }
 
         let engine = VoiceEngineFactory.make()
+        engine.vocabulary = vocabulary.map(\.text)
         engine.onEvent = { [weak self, weak engine] event in
             guard let self, let engine else { return }
             self.handle(event, from: engine)
@@ -160,8 +170,9 @@ final class VoiceSession: VoiceDriver {
 
     private func handle(_ event: VoiceEngineEvent, from source: VoiceSpeechEngine) {
         switch event {
-        case .partial(let text):
+        case .partial(let heard):
             guard source === engine else { return }
+            let text = corrector.apply(heard)
             onPartial?(text)
             // An empty revision only clears the panel; the phrase that follows fixes the app.
             guard !text.isEmpty else { return }
@@ -182,7 +193,7 @@ final class VoiceSession: VoiceDriver {
     }
 
     private func deliver(_ raw: String) {
-        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = corrector.apply(raw.trimmingCharacters(in: .whitespacesAndNewlines))
         guard !text.isEmpty else { return }
         onPhrase?(text)
         if typesText { typer.update(text, commit: true) }

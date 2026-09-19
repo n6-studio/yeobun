@@ -34,6 +34,7 @@ final class VoiceTool: ToggleTool {
         var hotKey: HotKey
         var silenceSeconds: Int
         var typesText: Bool
+        var vocabulary: [VoiceTerm]
         var notice: String
         var microphone: String
     }
@@ -55,6 +56,7 @@ final class VoiceTool: ToggleTool {
             hotKey: state.voiceHotKey,
             silenceSeconds: state.voiceSilenceSeconds,
             typesText: state.voiceTypesText,
+            vocabulary: state.voiceVocabulary,
             notice: state.voiceNotice,
             microphone: state.voiceMicrophone
         )
@@ -88,6 +90,12 @@ final class VoiceTool: ToggleTool {
             return
         }
         try askApp(listening)
+    }
+
+    /// The app watches the store and hands the new list to a live session.
+    func setVocabulary(_ terms: [VoiceTerm]) {
+        ToolStateStore.shared.update { $0.voiceVocabulary = VoiceVocabulary.clean(terms) }
+        ToolStateStore.shared.notifyChange()
     }
 
     func restore() {

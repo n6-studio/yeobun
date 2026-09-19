@@ -63,6 +63,7 @@ struct VoiceStatusJSON: Encodable {
     var hotkey: String
     var silenceSeconds: Int
     var typesText: Bool
+    var vocabulary: [VoiceTerm]
     var accessibility: Bool
     /// "granted", "denied", or "" until the app has asked.
     var microphone: String
@@ -161,6 +162,7 @@ enum StatusBuilder {
                 hotkey: voice.hotKey.display,
                 silenceSeconds: voice.silenceSeconds,
                 typesText: voice.typesText,
+                vocabulary: voice.vocabulary,
                 accessibility: AccessibilityAuth.hasPermission,
                 microphone: voice.microphone,
                 notice: voice.notice

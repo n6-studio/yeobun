@@ -28,6 +28,8 @@ struct ToolState: Codable, Equatable {
     var voiceHotKey: HotKey = .defaultVoice
     var voiceSilenceSeconds: Int = VoiceTool.defaultSilenceSeconds
     var voiceTypesText: Bool = true
+    /// Words and terms the recognizer should get right.
+    var voiceVocabulary: [VoiceTerm] = []
     /// Last reason a session could not start, for the CLI. Empty when fine.
     var voiceNotice: String = ""
     /// "granted", "denied", or "" while unknown. The app writes it; the CLI
@@ -68,6 +70,9 @@ struct ToolState: Codable, Equatable {
         let silence = try container.decodeIfPresent(Int.self, forKey: .voiceSilenceSeconds) ?? VoiceTool.defaultSilenceSeconds
         voiceSilenceSeconds = VoiceTool.silenceChoices.contains(silence) ? silence : VoiceTool.defaultSilenceSeconds
         voiceTypesText = try container.decodeIfPresent(Bool.self, forKey: .voiceTypesText) ?? true
+        voiceVocabulary = VoiceVocabulary.clean(
+            try container.decodeIfPresent([VoiceTerm].self, forKey: .voiceVocabulary) ?? []
+        )
         voiceNotice = try container.decodeIfPresent(String.self, forKey: .voiceNotice) ?? ""
         voiceMicrophone = try container.decodeIfPresent(String.self, forKey: .voiceMicrophone) ?? ""
         keyboardBacklightDidForce = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightDidForce) ?? false

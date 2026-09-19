@@ -59,8 +59,48 @@ enum CLICommands {
             try mapError { try tool.setListening(true) }
         case .stop:
             try mapError { try tool.setListening(false) }
+        case .vocab(let action):
+            try vocab(action, tool: tool, json: json)
+            return
         }
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .voice)
+    }
+
+    private static func vocab(_ action: CLIVocabAction, tool: VoiceTool, json: Bool) throws {
+        let current = ToolStateStore.shared.current.voiceVocabulary
+        switch action {
+        case .list:
+            break
+        case .add(let term):
+            let known = current.contains { $0.id == term.id }
+            if !known, current.count >= VoiceVocabulary.maxTerms {
+                throw CLIError.failed("The vocabulary is full (\(VoiceVocabulary.maxTerms) terms). Remove one first.")
+            }
+            tool.setVocabulary(VoiceVocabulary.adding(term, to: current))
+        case .remove(let text):
+            guard current.contains(where: { $0.id == VoiceVocabulary.key(text) }) else {
+                throw CLIError.failed("\(text) is not in the vocabulary.")
+            }
+            tool.setVocabulary(VoiceVocabulary.removing(text, from: current))
+        case .clear:
+            tool.setVocabulary([])
+        }
+        let terms = ToolStateStore.shared.current.voiceVocabulary
+        if json {
+            emit(StatusBuilder.make(includeMac: false), json: true, focus: .voice)
+            return
+        }
+        if terms.isEmpty {
+            print("No vocabulary yet. Add a term: yeobun voice vocab add <term>")
+            return
+        }
+        for term in terms {
+            if term.soundsLike.isEmpty {
+                print(term.text)
+            } else {
+                print("\(term.text)  (sounds like: \(term.soundsLike.joined(separator: ", ")))")
+            }
+        }
     }
 
     private static func run(_ id: ToolID, _ action: CLISwitch) throws {
@@ -186,6 +226,7 @@ enum CLICommands {
         var parts = [status.listening ? "on  listening" : "on"]
         parts.append(status.hotkey)
         if !status.locale.isEmpty { parts.append(status.locale) }
+        if !status.vocabulary.isEmpty { parts.append("\(status.vocabulary.count) vocabulary") }
         if status.microphone == "denied" { parts.append("needs Microphone") }
         if status.typesText, !status.accessibility { parts.append("needs Accessibility to type") }
         if !status.listening, !status.notice.isEmpty { parts.append(status.notice) }

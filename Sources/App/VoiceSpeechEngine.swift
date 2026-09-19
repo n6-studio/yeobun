@@ -27,6 +27,8 @@ enum VoiceLocaleSupport {
 /// One on-device recognizer. Events arrive on the main thread.
 protocol VoiceSpeechEngine: AnyObject {
     var onEvent: ((VoiceEngineEvent) -> Void)? { get set }
+    /// Words to favour while recognizing. Can change during a session.
+    var vocabulary: [String] { get set }
     func supportedLocales() async -> [Locale]
     func support(for locale: Locale) async -> VoiceLocaleSupport
     /// Loads or downloads what the language needs. Throws a user-facing message.
@@ -65,6 +67,8 @@ enum VoiceEngineFactory {
 /// request becomes one phrase.
 final class LegacySpeechEngine: VoiceSpeechEngine {
     var onEvent: ((VoiceEngineEvent) -> Void)?
+    /// Read at the start of each request, so a change lands after the next pause.
+    var vocabulary: [String] = []
 
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -150,6 +154,7 @@ final class LegacySpeechEngine: VoiceSpeechEngine {
         next.shouldReportPartialResults = true
         next.requiresOnDeviceRecognition = true
         next.addsPunctuation = true
+        next.contextualStrings = vocabulary
         let previous = lock.withLock {
             let current = request
             request = next

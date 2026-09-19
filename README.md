@@ -110,7 +110,7 @@ Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the li
 </tr>
 </table>
 
-A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). If Yeobun's own icon is among them, it is the first tile and opens the panel. Click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
+A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). If Yeobun's own icon is among them, it is the first tile and opens the panel. Click or right-click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app and closes the strip. Dismissing that menu without choosing leaves the strip open. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
 
 ⌘-drag icons to the left of the chevron and they leave the bar; they stay one chevron click away. **Layout** is a grid or a vertical list. **Icon size** and **Name size** set how those tiles draw.
 
@@ -132,6 +132,8 @@ Turn the tool on, then press **⌃⌥V** in any app and start talking. The tile 
 **Language** defaults to the system language. On macOS 26 Yeobun uses the same on-device model as system dictation and downloads a language the first time you pick it. On macOS 14 and 15 it uses the older on-device recognizer, which needs the language downloaded under System Settings › Keyboard › Dictation. Nothing is sent to a server.
 
 Click **Shortcut** to record a different key combination. **Type into the front app** off keeps the words in the panel only.
+
+**Vocabulary** is for the names and technical terms it keeps getting wrong. Add a term spelled the way you want it written, such as `PostHog`. The recognizer takes the list as a hint, which is enough for words it half knows, and the term always comes out with your spelling and capitals. For words it has never seen, fill in **Sounds like** with what it writes instead today, separated by commas: `kubectl` with `cube control, cube cuddle`. Those are rewritten to the term, as whole words only, while you talk. Up to 100 terms, shared by every language, and changes apply to a session that is already listening.
 
 Needs **Microphone**. Typing into other apps needs **Accessibility**, the same permission as Scroll reverse; without it the transcript still shows in the panel. Text goes in as key presses, so the clipboard is left alone. Keep the cursor where it is until a phrase settles, because corrections backspace from there.
 
@@ -192,6 +194,7 @@ yeobun awake on --minutes 60
 yeobun menubar on
 yeobun voice on
 yeobun voice start
+yeobun voice vocab add kubectl --sounds-like "cube control"
 yeobun mac
 ```
 
@@ -209,5 +212,6 @@ open ~/Applications/Yeobun.app
 - Built-in keyboard and Keep awake need no extra permission.
 - Scroll reverse needs Accessibility. Voice typing needs Microphone, plus Accessibility to type into other apps.
 - `yeobun voice on|off` is the master switch and is remembered. `yeobun voice start|stop` controls listening and needs the app open; the CLI never touches the microphone.
+- `yeobun voice vocab` lists the vocabulary; `vocab add <term> [--sounds-like <text>]`, `vocab remove <term>`, and `vocab clear` edit it. Adding a term that is already there merges the new sounds-like entries into it. The list is also under `voice.vocabulary` in the status JSON.
 - Lid awake asks for an administrator password once.
 - Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

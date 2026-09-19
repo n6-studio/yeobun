@@ -29,6 +29,10 @@ enum CLIParser {
       yeobun voice start [--json]
       yeobun voice stop [--json]
       yeobun voice status [--json]
+      yeobun voice vocab [--json]
+      yeobun voice vocab add <term> [--sounds-like <text>]... [--json]
+      yeobun voice vocab remove <term> [--json]
+      yeobun voice vocab clear [--json]
       yeobun mac [--json]
 
     keyboard  Built-in keyboard
@@ -37,7 +41,9 @@ enum CLIParser {
     awake     Keep awake
     menubar   Hidden icons
     voice     Voice typing. on/off arms or disables the tool and its shortcut;
-              start/stop controls listening (needs on, and the app running)
+              start/stop controls listening (needs on, and the app running);
+              vocab lists the words it should get right. --sounds-like is what
+              it writes instead today, e.g. add kubectl --sounds-like "cube control"
     mac       This Mac
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
@@ -110,6 +116,9 @@ enum CLIParser {
 
     private static func parseVoice(_ tokens: [String]) throws -> CLIVoiceAction {
         guard let action = tokens.first else { return .status }
+        if action == "vocab" {
+            return .vocab(try parseVocab(Array(tokens.dropFirst())))
+        }
         guard tokens.count == 1 else { throw CLIError.usage("Unexpected arguments for voice \(action).") }
         switch action {
         case "status": return .status
@@ -118,7 +127,47 @@ enum CLIParser {
         case "start": return .start
         case "stop": return .stop
         default:
-            throw CLIError.usage("Unknown action: \(action) (expected on, off, start, stop, or status)")
+            throw CLIError.usage("Unknown action: \(action) (expected on, off, start, stop, status, or vocab)")
+        }
+    }
+
+    private static func parseVocab(_ tokens: [String]) throws -> CLIVocabAction {
+        guard let action = tokens.first else { return .list }
+        let rest = Array(tokens.dropFirst())
+        switch action {
+        case "list":
+            guard rest.isEmpty else { throw CLIError.usage("Unexpected arguments for vocab list.") }
+            return .list
+        case "clear":
+            guard rest.isEmpty else { throw CLIError.usage("Unexpected arguments for vocab clear.") }
+            return .clear
+        case "remove":
+            guard rest.count == 1, !VoiceVocabulary.tidy(rest[0]).isEmpty else {
+                throw CLIError.usage("vocab remove needs one term. Quote it if it has spaces.")
+            }
+            return .remove(rest[0])
+        case "add":
+            var words: [String] = []
+            var soundsLike: [String] = []
+            var i = 0
+            while i < rest.count {
+                if rest[i] == "--sounds-like" {
+                    i += 1
+                    guard i < rest.count else { throw CLIError.usage("--sounds-like needs text.") }
+                    soundsLike += VoiceVocabulary.aliases(from: rest[i])
+                } else if rest[i].hasPrefix("--") {
+                    throw CLIError.usage("Unknown option: \(rest[i])")
+                } else {
+                    words.append(rest[i])
+                }
+                i += 1
+            }
+            guard words.count == 1, !VoiceVocabulary.tidy(words[0]).isEmpty else {
+                throw CLIError.usage("vocab add needs one term. Quote it if it has spaces.")
+            }
+            return .add(VoiceTerm(text: VoiceVocabulary.tidy(words[0]), soundsLike: soundsLike))
+        default:
+            throw CLIError.usage("Unknown action: \(action) (expected list, add, remove, or clear)")
         }
     }
 

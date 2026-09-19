@@ -9,6 +9,13 @@ import Speech
 @available(macOS 26, *)
 final class AnalyzerSpeechEngine: VoiceSpeechEngine {
     var onEvent: ((VoiceEngineEvent) -> Void)?
+    var vocabulary: [String] = [] {
+        didSet {
+            guard vocabulary != oldValue, let analyzer else { return }
+            let context = Self.context(for: vocabulary)
+            Task { try? await analyzer.setContext(context) }
+        }
+    }
 
     private var transcriber: DictationTranscriber?
     private var analyzer: SpeechAnalyzer?
@@ -82,6 +89,9 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
                 await MainActor.run { deliver(.failed(message)) }
             }
         }
+        if !vocabulary.isEmpty {
+            try await analyzer.setContext(Self.context(for: vocabulary))
+        }
         try await analyzer.start(inputSequence: stream)
         self.analyzer = analyzer
     }
@@ -107,6 +117,12 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
         // Results finish once the analyzer does; give the last phrase time to land.
         _ = await resultsTask?.result
         resultsTask = nil
+    }
+
+    private static func context(for vocabulary: [String]) -> AnalysisContext {
+        let context = AnalysisContext()
+        context.contextualStrings[.general] = vocabulary
+        return context
     }
 
     private func emit(_ event: VoiceEngineEvent) {

@@ -80,6 +80,14 @@ enum CLIVoiceAction {
     case start
     case stop
     case status
+    case vocab(CLIVocabAction)
+}
+
+enum CLIVocabAction {
+    case list
+    case add(VoiceTerm)
+    case remove(String)
+    case clear
 }
 
 enum CLISwitch {

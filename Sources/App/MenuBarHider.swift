@@ -29,13 +29,14 @@ final class MenuBarHider {
     private var chevronVisibleObserver: NSKeyValueObservation?
     private var overflow: MenuBarOverflowPanel!
     private let overflowMenu = MenuBarOverflowMenu()
-    private let overflowQueue = DispatchQueue(label: "studio.n6.yeobun.overflow.menu", qos: .userInitiated)
+    private var restoreHideWork: DispatchWorkItem?
+    private var suppressLayoutStretch = false
 
     init(model: AppModel) {
         self.model = model
         overflow = MenuBarOverflowPanel(
-            onPress: { [weak self] item in
-                self?.useOverflowItem(item)
+            onClick: { [weak self] item, click in
+                self?.useOverflowItem(item, click: click)
             },
             onDismiss: { [weak model] in
                 model?.closeOverflowStrip()
@@ -96,6 +97,10 @@ final class MenuBarHider {
     // MARK: - Apply
 
     private func apply(enabled: Bool) {
+        restoreHideWork?.cancel()
+        restoreHideWork = nil
+        suppressLayoutStretch = false
+        overflow.ignoreOutsideClicks = false
         guard enabled else {
             chevronVisibleObserver = nil
             overflow.dismiss()
@@ -199,7 +204,7 @@ final class MenuBarHider {
     }
 
     private func checkLayout() {
-        guard model.menuBarHideEnabled else { return }
+        guard model.menuBarHideEnabled, !suppressLayoutStretch else { return }
         let valid = layoutIsValid
         model.noteMenuBarLayout(valid: valid)
         if valid, divider?.length != Self.hiddenLength {
@@ -210,7 +215,8 @@ final class MenuBarHider {
     /// Show the item's own menu under the pointer; items without a menu are
     /// pressed directly, which is all a popover-style item can offer.
     /// Yeobun's own tile opens the panel from the chevron, on screen.
-    private func useOverflowItem(_ item: OverflowItem) {
+    /// The strip stays open if the menu is dismissed without choosing an entry.
+    private func useOverflowItem(_ item: OverflowItem, click: OverflowClick) {
         if item.opensYeobun {
             let anchor = chevron?.button
             overflow.dismiss()
@@ -219,19 +225,65 @@ final class MenuBarHider {
             }
             return
         }
-        overflowQueue.async { [weak self] in
-            let entries = MenuBarOverflowResolver.menuEntries(for: item)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                let shown = self.overflowMenu.present(entries, title: item.label) { [weak self] in
-                    self?.overflow.dismiss()
-                }
-                if !shown {
-                    self.overflow.dismiss()
-                    self.model.activateOverflowItem(item)
-                }
-            }
+        let event = click == .right ? NSApp.currentEvent : nil
+        let entries = MenuBarOverflowResolver.menuEntries(for: item)
+        let shown = overflowMenu.present(
+            entries,
+            title: item.label,
+            in: overflow.hostView,
+            event: event
+        ) { [weak self] in
+            self?.overflow.dismiss()
         }
+        if shown { return }
+        if click == .right {
+            showNativeContextMenu(item)
+        } else {
+            overflow.dismiss()
+            model.activateOverflowItem(item)
+        }
+    }
+
+    private func showNativeContextMenu(_ item: OverflowItem) {
+        overflow.ignoreOutsideClicks = true
+        withItemsTemporarilyShown { [weak self] in
+            guard let self else { return }
+            if MenuBarOverflowResolver.showMenu(item) { return }
+            if MenuBarOverflowResolver.click(item, right: true) { return }
+            self.overflow.ignoreOutsideClicks = false
+            self.restoreHiddenLength()
+        }
+    }
+
+    /// Shrink the spacer so tucked icons slide into the bar, run `body`, then
+    /// hide them again. Right-click menus appear at the item, which is useless
+    /// while it is still off screen.
+    private func withItemsTemporarilyShown(_ body: @escaping () -> Void) {
+        restoreHideWork?.cancel()
+        restoreHideWork = nil
+        guard layoutIsValid else {
+            body()
+            return
+        }
+        suppressLayoutStretch = true
+        divider?.length = Self.gapLength
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            body()
+            let work = DispatchWorkItem { [weak self] in
+                self?.restoreHiddenLength()
+            }
+            self?.restoreHideWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        }
+    }
+
+    private func restoreHiddenLength() {
+        restoreHideWork?.cancel()
+        restoreHideWork = nil
+        suppressLayoutStretch = false
+        overflow.ignoreOutsideClicks = false
+        guard model.menuBarHideEnabled, layoutIsValid else { return }
+        divider?.length = Self.hiddenLength
     }
 
     private func presentOverflow(
@@ -265,6 +317,7 @@ final class MenuBarHider {
             showContextMenu()
             return
         }
+        restoreHiddenLength()
         model.chevronClicked()
     }
 
