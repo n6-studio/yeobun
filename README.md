@@ -158,9 +158,14 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 <td><img src="docs/screenshots/storage-light.png" width="320" alt="Storage in light mode"></td>
 <td><img src="docs/screenshots/storage-dark.png" width="320" alt="Storage in dark mode"></td>
 </tr>
+<tr>
+<td><img src="docs/screenshots/remote-light.png" width="320" alt="Remote server in light mode"></td>
+<td><img src="docs/screenshots/remote-dark.png" width="320" alt="Remote server in dark mode"></td>
+</tr>
 </table>
 
 - **This Mac** — live CPU and RAM on the tile; detail adds pressure, swap, thermal state, uptime, and the top processes.
+- **Remote** — SSH hosts you add. Each one is a Stats tile with live CPU and RAM; detail adds load, disk, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
 - **Battery** — charge, time remaining, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
 - **Network** — link type, Wi-Fi name when macOS allows it, local IP, live down/up.
 - **Storage** — used and free space on the boot volume, plus other mounted disks.
@@ -177,6 +182,7 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 - **Open at login** — keep Yeobun in the menu bar (on by default).
 - **Menu bar** — logo only, icons for tools that are on, or both. The logo stays when nothing is on, so you can still find the app.
 - **Menu bar stats** — optional CPU, battery, or network next to the logo, with a small label above the value.
+- **Remote servers** — add an SSH host (or config alias) to glance at its load from the Stats tab. Needs a key in ssh-agent or `~/.ssh`. Up to 8 hosts.
 - **Check status** — read each tool from this Mac and restore anything that dropped.
 
 Right-click the menu-bar item for the same toggles without opening the panel.
@@ -196,6 +202,8 @@ yeobun voice on
 yeobun voice start
 yeobun voice vocab add kubectl --sounds-like "cube control"
 yeobun mac
+yeobun remote add vps --name VPS
+yeobun remote status
 ```
 
 Every command accepts `--json`. Exit codes: `0` ok, `1` failed, `2` usage, `3` permission. `yeobun --help` is the full contract.
@@ -213,5 +221,6 @@ open ~/Applications/Yeobun.app
 - Scroll reverse needs Accessibility. Voice typing needs Microphone, plus Accessibility to type into other apps.
 - `yeobun voice on|off` is the master switch and is remembered. `yeobun voice start|stop` controls listening and needs the app open; the CLI never touches the microphone.
 - `yeobun voice vocab` lists the vocabulary; `vocab add <term> [--sounds-like <text>]`, `vocab remove <term>`, and `vocab clear` edit it. Adding a term that is already there merges the new sounds-like entries into it. The list is also under `voice.vocabulary` in the status JSON.
+- `yeobun remote` lists saved SSH servers. `remote add <host> [--name] [--user] [--port] [--identity]` and `remote remove <name-or-id>` edit the list. `remote status` probes live CPU, RAM, load, and disk (Linux). Human `yeobun status` only reports how many remotes are configured; live numbers are `yeobun remote status`.
 - Lid awake asks for an administrator password once.
 - Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

@@ -113,6 +113,10 @@ private func captureAll(to out: URL) throws {
         presentation.route = .storage
         seedHome(model)
     }
+    try writePair(name: "remote", to: out) { model, presentation in
+        presentation.route = .remote(demoRemoteID)
+        seedHome(model)
+    }
     try writePair(name: "settings", to: out) { model, presentation in
         presentation.route = .settings
         seedHome(model)
@@ -177,10 +181,12 @@ private func seedHome(_ model: AppModel) {
         VoiceLocaleChoice(id: "it-IT", name: "Italian (Italy)")
     ]
 
-    model.visibleHomeTools = Array(HomeTool.allCases)
+    model.visibleHomeTools = HomeItem.builtins + [.remote(demoRemoteID)]
     model.hiddenHomeTools = []
     model.menuBarStats = .cpu
     model.stats = demoStats()
+    model.remotes = [demoRemote()]
+    model.remoteSamples = [demoRemoteID: demoRemoteSample()]
     if let plist = NSDictionary(contentsOfFile: "Resources/Info.plist"),
        let version = plist["CFBundleShortVersionString"] as? String {
         model.appVersion = version
@@ -237,6 +243,39 @@ private func demoStats() -> SystemSample {
         ProcessUsage(pid: 1, name: "Cursor", cpuPercent: 18, ramBytes: 2_200_000_000),
         ProcessUsage(pid: 2, name: "Safari", cpuPercent: 6, ramBytes: 1_100_000_000),
         ProcessUsage(pid: 3, name: "WindowServer", cpuPercent: 4, ramBytes: 480_000_000)
+    ]
+    return sample
+}
+
+private let demoRemoteID = UUID(uuidString: "3F1B7C2A-9E54-4D0B-A8C1-6D2E9B4F0A11")!
+
+@MainActor
+private func demoRemote() -> RemoteServer {
+    RemoteServer(id: demoRemoteID, name: "VPS", host: "vps.example")
+}
+
+@MainActor
+private func demoRemoteSample() -> RemoteSample {
+    var sample = RemoteSample()
+    sample.status = .ok
+    sample.hostname = "vps"
+    sample.cpuReady = true
+    sample.cpuFraction = 0.18
+    sample.cpuHistory = [0.11, 0.14, 0.16, 0.22, 0.19, 0.18, 0.15, 0.17, 0.21, 0.18]
+    sample.ramUsed = 3_221_225_472
+    sample.ramTotal = 8_589_934_592
+    sample.swapUsed = 0
+    sample.swapTotal = 0
+    sample.load1 = 0.42
+    sample.load5 = 0.38
+    sample.load15 = 0.31
+    sample.uptimeSeconds = ((12 * 24) + 3) * 3600
+    sample.diskUsed = 48 * 1_073_741_824
+    sample.diskTotal = 80 * 1_073_741_824
+    sample.topProcesses = [
+        ProcessUsage(pid: 1, name: "caddy", cpuPercent: 9, ramBytes: 180_000_000),
+        ProcessUsage(pid: 2, name: "postgres", cpuPercent: 4, ramBytes: 420_000_000),
+        ProcessUsage(pid: 3, name: "node", cpuPercent: 3, ramBytes: 210_000_000)
     ]
     return sample
 }

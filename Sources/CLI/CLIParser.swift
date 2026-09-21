@@ -34,6 +34,10 @@ enum CLIParser {
       yeobun voice vocab remove <term> [--json]
       yeobun voice vocab clear [--json]
       yeobun mac [--json]
+      yeobun remote [--json]
+      yeobun remote add <host> [--name <text>] [--user <user>] [--port N] [--identity <path>] [--json]
+      yeobun remote remove <name-or-id> [--json]
+      yeobun remote status [<name-or-id>] [--json]
 
     keyboard  Built-in keyboard
     scroll    Scroll reverse
@@ -45,6 +49,9 @@ enum CLIParser {
               vocab lists the words it should get right. --sounds-like is what
               it writes instead today, e.g. add kubectl --sounds-like "cube control"
     mac       This Mac
+    remote    External SSH servers. add/remove saves the list; status probes
+              live CPU, RAM, load, and disk. Host can be an ssh config alias.
+              Needs a key in ssh-agent or ~/.ssh; Linux hosts only.
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
     Keep awake --minutes: \(awakeMinutes.map(String.init).joined(separator: ", ")) (omit for indefinitely)
@@ -79,6 +86,8 @@ enum CLIParser {
         case "mac":
             guard tokens.count == 1 else { throw CLIError.usage("Unexpected arguments for mac.") }
             return CLIRequest(command: .mac, json: json)
+        case "remote":
+            return CLIRequest(command: .remote(try parseRemote(Array(tokens.dropFirst()))), json: json)
         case "keyboard":
             return CLIRequest(command: .keyboard(try parseSwitch(Array(tokens.dropFirst()), tool: .keyboard)), json: json)
         case "scroll":
@@ -94,6 +103,74 @@ enum CLIParser {
         default:
             throw CLIError.usage("Unknown command: \(first)")
         }
+    }
+
+    private static func parseRemote(_ tokens: [String]) throws -> CLIRemoteAction {
+        guard let action = tokens.first else { return .list }
+        let rest = Array(tokens.dropFirst())
+        switch action {
+        case "list":
+            guard rest.isEmpty else { throw CLIError.usage("Unexpected arguments for remote list.") }
+            return .list
+        case "status":
+            if rest.isEmpty { return .status(nil) }
+            guard rest.count == 1 else { throw CLIError.usage("remote status takes at most one name or id.") }
+            return .status(rest[0])
+        case "remove":
+            guard rest.count == 1, !rest[0].trimmingCharacters(in: .whitespaces).isEmpty else {
+                throw CLIError.usage("remote remove needs a name or id.")
+            }
+            return .remove(rest[0])
+        case "add":
+            return try parseRemoteAdd(rest)
+        default:
+            throw CLIError.usage("Unknown action: \(action) (expected add, remove, status, or list)")
+        }
+    }
+
+    private static func parseRemoteAdd(_ tokens: [String]) throws -> CLIRemoteAction {
+        var host: String?
+        var name: String?
+        var user: String?
+        var port: Int?
+        var identity: String?
+        var i = 0
+        while i < tokens.count {
+            let token = tokens[i]
+            switch token {
+            case "--name":
+                i += 1
+                guard i < tokens.count else { throw CLIError.usage("--name needs text.") }
+                name = tokens[i]
+            case "--user":
+                i += 1
+                guard i < tokens.count else { throw CLIError.usage("--user needs a username.") }
+                user = tokens[i]
+            case "--port":
+                i += 1
+                guard i < tokens.count, let value = Int(tokens[i]) else {
+                    throw CLIError.usage("--port needs a number.")
+                }
+                port = value
+            case "--identity":
+                i += 1
+                guard i < tokens.count else { throw CLIError.usage("--identity needs a path.") }
+                identity = tokens[i]
+            default:
+                if token.hasPrefix("--") {
+                    throw CLIError.usage("Unknown option: \(token)")
+                }
+                if host != nil {
+                    throw CLIError.usage("Unexpected argument: \(token)")
+                }
+                host = token
+            }
+            i += 1
+        }
+        guard let host, !host.trimmingCharacters(in: .whitespaces).isEmpty else {
+            throw CLIError.usage("remote add needs a host or SSH alias.")
+        }
+        return .add(host: host, name: name, user: user, port: port, identity: identity)
     }
 
     private static func parseSwitch(_ tokens: [String], tool: ToolID) throws -> CLISwitch {

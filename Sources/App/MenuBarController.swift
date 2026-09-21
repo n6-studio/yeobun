@@ -93,37 +93,37 @@ final class MenuBarController: NSObject {
         menu.addItem(withTitle: "Open Yeobun", action: #selector(openFromMenu), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(toggleItem(
-            title: HomeTool.keyboard.title,
+            title: ToolID.keyboard.title,
             action: #selector(toggleKeyboardFromMenu),
             isOn: model.keyboardLocked,
             isEnabled: !model.keyboardBusy
         ))
         menu.addItem(toggleItem(
-            title: HomeTool.scroll.title,
+            title: ToolID.scroll.title,
             action: #selector(toggleScrollFromMenu),
             isOn: model.scrollReverseEnabled,
             isEnabled: true
         ))
         menu.addItem(toggleItem(
-            title: HomeTool.lid.title,
+            title: ToolID.lid.title,
             action: #selector(toggleLidFromMenu),
             isOn: model.lidSleepDisabled,
             isEnabled: !model.lidBusy
         ))
         menu.addItem(toggleItem(
-            title: HomeTool.awake.title,
+            title: ToolID.awake.title,
             action: #selector(toggleAwakeFromMenu),
             isOn: model.awakeActive,
             isEnabled: true
         ))
         menu.addItem(toggleItem(
-            title: HomeTool.menuBar.title,
+            title: ToolID.menuBar.title,
             action: #selector(toggleMenuBarFromMenu),
             isOn: model.menuBarHideEnabled,
             isEnabled: true
         ))
         menu.addItem(toggleItem(
-            title: HomeTool.voice.title,
+            title: ToolID.voice.title,
             action: #selector(toggleVoiceFromMenu),
             isOn: model.voiceEnabled,
             isEnabled: true

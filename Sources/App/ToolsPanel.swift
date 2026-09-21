@@ -40,7 +40,7 @@ struct ToolsPanel: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             } else {
-                Text(presentation.isEditingHome ? "Edit" : presentation.route.title)
+                Text(headerTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -69,6 +69,14 @@ struct ToolsPanel: View {
         }
     }
 
+    private var headerTitle: String {
+        if presentation.isEditingHome { return "Edit" }
+        if case .remote(let id) = presentation.route {
+            return model.title(for: .remote(id))
+        }
+        return presentation.route.title
+    }
+
     @ViewBuilder
     private var screen: some View {
         switch presentation.route {
@@ -94,6 +102,8 @@ struct ToolsPanel: View {
             NetworkDetail()
         case .storage:
             StorageDetail()
+        case .remote(let id):
+            RemoteDetail(id: id)
         case .settings:
             SettingsDetail()
         }
@@ -144,7 +154,7 @@ private struct HomeGrid: View {
                         if index > 0 {
                             Divider()
                         }
-                        HiddenToolRow(tool: tool) {
+                        HiddenToolRow(tool: tool, title: model.title(for: tool)) {
                             withAnimation(reduceMotion ? nil : Motion.enter) {
                                 model.showHomeTool(tool)
                             }
@@ -218,7 +228,7 @@ private struct HomeGrid: View {
                 VisibilityBadge(
                     symbol: "minus.circle.fill",
                     tint: .red,
-                    label: "Hide \(tool.title)"
+                    label: "Hide \(model.title(for: tool))"
                 ) {
                     cancelDrag()
                     withAnimation(reduceMotion ? nil : Motion.enter) {
@@ -230,11 +240,11 @@ private struct HomeGrid: View {
     }
 
     @ViewBuilder
-    private func tile(for tool: HomeTool) -> some View {
+    private func tile(for tool: HomeItem) -> some View {
         switch tool {
-        case .keyboard:
+        case .tool(.keyboard):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.keyboardLocked ? "On" : "Off",
                 isOn: model.keyboardLocked,
                 isBusy: model.keyboardBusy,
@@ -245,9 +255,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleKeyboard() },
                 action: { presentation.open(.keyboard) }
             )
-        case .scroll:
+        case .tool(.scroll):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.scrollReverseEnabled ? "On" : "Off",
                 isOn: model.scrollReverseEnabled,
                 outline: tool.outline,
@@ -256,9 +266,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleScrollReverse() },
                 action: { presentation.open(.scroll) }
             )
-        case .lid:
+        case .tool(.lid):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.lidSleepDisabled ? "On" : "Off",
                 isOn: model.lidSleepDisabled,
                 isBusy: model.lidBusy,
@@ -268,9 +278,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleLidSleep() },
                 action: { presentation.open(.lid) }
             )
-        case .awake:
+        case .tool(.awake):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.awakeTileStatus,
                 isOn: model.awakeActive,
                 outline: tool.outline,
@@ -279,9 +289,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleAwake() },
                 action: { presentation.open(.awake) }
             )
-        case .menuBar:
+        case .tool(.menuBar):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.menuBarTileStatus,
                 isOn: model.menuBarHideEnabled,
                 outline: tool.outline,
@@ -290,9 +300,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleMenuBarHide() },
                 action: { presentation.open(.menuBar) }
             )
-        case .voice:
+        case .tool(.voice):
             ToolTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 status: model.voiceTileStatus,
                 isOn: model.voiceEnabled,
                 isBusy: model.voiceBusy,
@@ -302,9 +312,9 @@ private struct HomeGrid: View {
                 onToggle: { model.toggleVoiceEnabled() },
                 action: { presentation.open(.voice) }
             )
-        case .machine:
+        case .tool(.machine):
             InfoStatsTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 outline: tool.outline,
                 fill: tool.fill,
                 route: .machine,
@@ -314,9 +324,9 @@ private struct HomeGrid: View {
                 ],
                 accessibilityValue: "CPU \(model.cpuPercentLabel), RAM \(model.ramShortLabel)"
             )
-        case .battery:
+        case .tool(.battery):
             InfoStatsTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 outline: tool.outline,
                 fill: tool.fill,
                 route: .battery,
@@ -326,9 +336,9 @@ private struct HomeGrid: View {
                 ],
                 accessibilityValue: "\(model.batteryPercentLabel), \(model.batteryStatusLabel)"
             )
-        case .network:
+        case .tool(.network):
             InfoStatsTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 outline: tool.outline,
                 fill: tool.fill,
                 route: .network,
@@ -338,9 +348,9 @@ private struct HomeGrid: View {
                 ],
                 accessibilityValue: "\(model.networkPrimaryLabel), \(model.networkSecondaryLabel)"
             )
-        case .storage:
+        case .tool(.storage):
             InfoStatsTile(
-                title: tool.title,
+                title: model.title(for: tool),
                 outline: tool.outline,
                 fill: tool.fill,
                 route: .storage,
@@ -349,6 +359,18 @@ private struct HomeGrid: View {
                     InfoMetric(label: "Used", value: model.diskUsedLabel, level: model.diskUsageLevel)
                 ],
                 accessibilityValue: "\(model.diskFreeLabel) free, \(model.diskUsedLabel) used"
+            )
+        case .remote(let id):
+            InfoStatsTile(
+                title: model.title(for: tool),
+                outline: tool.outline,
+                fill: tool.fill,
+                route: .remote(id),
+                lines: [
+                    InfoMetric(label: "CPU", value: model.remoteCPULabel(id), level: model.remoteCPULevel(id)),
+                    InfoMetric(label: "RAM", value: model.remoteRAMLabel(id), level: model.remoteRAMLevel(id))
+                ],
+                accessibilityValue: "CPU \(model.remoteCPULabel(id)), RAM \(model.remoteRAMLabel(id))"
             )
         }
     }
@@ -591,7 +613,8 @@ private struct VisibilityBadge: View {
 }
 
 private struct HiddenToolRow: View {
-    let tool: HomeTool
+    let tool: HomeItem
+    let title: String
     let onShow: () -> Void
 
     var body: some View {
@@ -603,7 +626,7 @@ private struct HiddenToolRow: View {
                     .frame(width: Radius.chrome, height: Radius.chrome)
                     .background(ModuleColor.offFill, in: Circle())
                     .accessibilityHidden(true)
-                Text(tool.title)
+                Text(title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 8)
@@ -615,7 +638,7 @@ private struct HiddenToolRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Show \(tool.title)")
+        .accessibilityLabel("Show \(title)")
     }
 }
 
@@ -799,7 +822,7 @@ private struct KeyboardDetail: View {
                 .foregroundStyle(model.keyboardLocked ? ModuleColor.keyboard : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(HomeTool.keyboard.title)
+                    Text(ToolID.keyboard.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.keyboardStatus)
                         .font(.system(size: 11))
@@ -814,7 +837,7 @@ private struct KeyboardDetail: View {
                             .accessibilityLabel(model.keyboardLocked ? "Locking keyboard" : "Unlocking keyboard")
                     }
                     Toggle(
-                        HomeTool.keyboard.title,
+                        ToolID.keyboard.title,
                         isOn: Binding(
                             get: { model.keyboardLocked },
                             set: { model.setKeyboardLocked($0) }
@@ -899,7 +922,7 @@ private struct ScrollDetail: View {
                 .foregroundStyle(model.scrollReverseEnabled ? ModuleColor.scroll : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(HomeTool.scroll.title)
+                    Text(ToolID.scroll.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.scrollStatus)
                         .font(.system(size: 11))
@@ -908,7 +931,7 @@ private struct ScrollDetail: View {
                 }
                 Spacer(minLength: 8)
                 Toggle(
-                    HomeTool.scroll.title,
+                    ToolID.scroll.title,
                     isOn: Binding(
                         get: { model.scrollReverseEnabled },
                         set: { model.setScrollReverseEnabled($0) }
@@ -972,7 +995,7 @@ private struct LidDetail: View {
                 .foregroundStyle(model.lidSleepDisabled ? ModuleColor.lid : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(HomeTool.lid.title)
+                    Text(ToolID.lid.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.lidStatus)
                         .font(.system(size: 11))
@@ -984,10 +1007,10 @@ private struct LidDetail: View {
                     if model.lidBusy {
                         ProgressView()
                             .controlSize(.small)
-                            .accessibilityLabel(model.lidSleepDisabled ? "Turning \(HomeTool.lid.title) on" : "Turning \(HomeTool.lid.title) off")
+                            .accessibilityLabel(model.lidSleepDisabled ? "Turning \(ToolID.lid.title) on" : "Turning \(ToolID.lid.title) off")
                     }
                     Toggle(
-                        HomeTool.lid.title,
+                        ToolID.lid.title,
                         isOn: Binding(
                             get: { model.lidSleepDisabled },
                             set: { model.setLidSleepDisabled($0) }
@@ -1027,7 +1050,7 @@ private struct AwakeDetail: View {
                 .foregroundStyle(model.awakeActive ? ModuleColor.awake : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(HomeTool.awake.title)
+                    Text(ToolID.awake.title)
                         .font(.system(size: 13, weight: .semibold))
                     Text(model.awakeStatus)
                         .font(.system(size: 11))
@@ -1036,7 +1059,7 @@ private struct AwakeDetail: View {
                 }
                 Spacer(minLength: 8)
                 Toggle(
-                    HomeTool.awake.title,
+                    ToolID.awake.title,
                     isOn: Binding(
                         get: { model.awakeActive },
                         set: { model.setAwakeActive($0) }
@@ -1084,14 +1107,14 @@ private struct MenuBarDetail: View {
             GroupedPanel {
                 HStack(alignment: .center, spacing: 10) {
                     StateSymbol(
-                        outline: HomeTool.menuBar.outline,
-                        fill: HomeTool.menuBar.fill,
+                        outline: ToolID.menuBar.outline,
+                        fill: ToolID.menuBar.fill,
                         isActive: model.menuBarHideEnabled
                     )
                     .foregroundStyle(model.menuBarHideEnabled ? ModuleColor.menuBar : .primary)
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(HomeTool.menuBar.title)
+                        Text(ToolID.menuBar.title)
                             .font(.system(size: 13, weight: .semibold))
                         Text(model.menuBarStatus)
                             .font(.system(size: 11))
@@ -1100,7 +1123,7 @@ private struct MenuBarDetail: View {
                     }
                     Spacer(minLength: 8)
                     Toggle(
-                        HomeTool.menuBar.title,
+                        ToolID.menuBar.title,
                         isOn: Binding(
                             get: { model.menuBarHideEnabled },
                             set: { model.setMenuBarHideEnabled($0) }
@@ -1236,7 +1259,7 @@ private struct VoiceDetail: View {
                     .foregroundStyle(model.voiceEnabled ? ModuleColor.voice : .primary)
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(HomeTool.voice.title)
+                        Text(ToolID.voice.title)
                             .font(.system(size: 13, weight: .semibold))
                         Text(model.voiceStatus)
                             .font(.system(size: 11))
@@ -1245,7 +1268,7 @@ private struct VoiceDetail: View {
                     }
                     Spacer(minLength: 8)
                     Toggle(
-                        HomeTool.voice.title,
+                        ToolID.voice.title,
                         isOn: Binding(
                             get: { model.voiceEnabled },
                             set: { model.setVoiceEnabled($0) }
@@ -1567,6 +1590,118 @@ private struct MachineDetail: View {
     }
 }
 
+private struct RemoteDetail: View {
+    let id: UUID
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var presentation: PanelPresentation
+
+    private var sample: RemoteSample { model.remoteSample(id) }
+    private var server: RemoteServer? { model.remote(for: id) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GroupedPanel {
+                if sample.status == .ok {
+                    MeterRow(
+                        label: "CPU",
+                        value: model.remoteCPULabel(id),
+                        fraction: sample.cpuReady ? sample.cpuFraction : 0,
+                        level: model.remoteCPULevel(id)
+                    )
+                    .stagger(index: 0, generation: presentation.generation)
+
+                    if sample.cpuHistory.count > 1 {
+                        Sparkline(values: sample.cpuHistory)
+                            .stagger(index: 1, generation: presentation.generation)
+                    }
+
+                    MeterRow(
+                        label: "Memory",
+                        value: model.remoteRAMLabel(id),
+                        fraction: sample.ramFraction,
+                        level: model.remoteRAMLevel(id)
+                    )
+                    .stagger(index: 2, generation: presentation.generation)
+
+                    if sample.diskTotal > 0 {
+                        MeterRow(
+                            label: "Disk",
+                            value: "\(StatsFormat.gigabytes(sample.diskTotal - sample.diskUsed)) free",
+                            fraction: sample.diskFraction,
+                            level: model.remoteDiskLevel(id)
+                        )
+                        .stagger(index: 3, generation: presentation.generation)
+                    }
+
+                    if let load = loadLabel {
+                        StatRow(label: "Load", value: load)
+                            .stagger(index: 4, generation: presentation.generation)
+                    }
+
+                    if sample.swapTotal > 0 {
+                        StatRow(
+                            label: "Swap",
+                            value: "\(StatsFormat.gigabytes(sample.swapUsed)) / \(StatsFormat.gigabytes(sample.swapTotal))"
+                        )
+                        .stagger(index: 5, generation: presentation.generation)
+                    }
+
+                    if sample.uptimeSeconds > 0 {
+                        StatRow(label: "Uptime", value: StatsFormat.uptime(sample.uptimeSeconds))
+                            .stagger(index: 6, generation: presentation.generation)
+                    }
+
+                    if let host = server?.subtitle {
+                        StatRow(label: "Host", value: host)
+                            .stagger(index: 7, generation: presentation.generation)
+                    }
+                } else {
+                    Text(statusMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .stagger(index: 0, generation: presentation.generation)
+
+                    if let host = server?.subtitle {
+                        StatRow(label: "Host", value: host)
+                            .stagger(index: 1, generation: presentation.generation)
+                    }
+                }
+            }
+
+            if sample.status == .ok, !sample.topProcesses.isEmpty {
+                GroupedPanel {
+                    Text("Top processes")
+                        .font(.system(size: 12, weight: .semibold))
+                        .stagger(index: 8, generation: presentation.generation)
+                    ForEach(Array(sample.topProcesses.enumerated()), id: \.element.id) { index, process in
+                        ProcessRow(process: process)
+                            .stagger(index: 9 + index, generation: presentation.generation)
+                    }
+                }
+            }
+        }
+    }
+
+    private var loadLabel: String? {
+        guard let one = sample.load1, let five = sample.load5, let fifteen = sample.load15 else {
+            return sample.load1.map { String(format: "%.2f", $0) }
+        }
+        return String(format: "%.2f  %.2f  %.2f", one, five, fifteen)
+    }
+
+    private var statusMessage: String {
+        if let notice = sample.notice, !notice.isEmpty { return notice }
+        switch sample.status {
+        case .connecting: return "Connecting…"
+        case .ok: return ""
+        case .auth: return "Needs SSH key"
+        case .unsupported: return "Needs a Linux host"
+        case .offline: return "Offline"
+        }
+    }
+}
+
 private struct BatteryDetail: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
@@ -1690,6 +1825,11 @@ private struct StorageDetail: View {
 private struct SettingsDetail: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
+    @State private var remoteName = ""
+    @State private var remoteHost = ""
+    @State private var remoteUser = ""
+    @State private var remotePort = ""
+    @State private var remoteIdentity = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1761,6 +1901,46 @@ private struct SettingsDetail: View {
             }
 
             GroupedPanel {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Remote servers")
+                        .font(.system(size: 13, weight: .semibold))
+                    remoteField("Name, optional", text: $remoteName)
+                    remoteField("Host or SSH alias", text: $remoteHost)
+                    HStack(spacing: 6) {
+                        remoteField("User, optional", text: $remoteUser)
+                        remoteField("Port", text: $remotePort)
+                    }
+                    remoteField("Identity file, optional", text: $remoteIdentity)
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button("Add") {
+                            addRemote()
+                        }
+                        .controlSize(.small)
+                        .disabled(remoteHost.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .accessibilityLabel("Add remote server")
+                    }
+                    if let notice = model.remoteAddNotice {
+                        Text(notice)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .stagger(index: 3, generation: presentation.generation)
+
+                if !model.remotes.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(model.remotes) { server in
+                            remoteRow(server)
+                        }
+                    }
+                    .stagger(index: 4, generation: presentation.generation)
+                }
+            }
+
+            GroupedPanel {
                 HStack {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Check status")
@@ -1781,7 +1961,7 @@ private struct SettingsDetail: View {
                     .controlSize(.small)
                     .disabled(model.statusCheckBusy || model.keyboardBusy || model.lidBusy)
                 }
-                .stagger(index: 3, generation: presentation.generation)
+                .stagger(index: 5, generation: presentation.generation)
 
                 if let notice = model.statusCheckNotice {
                     Text(notice)
@@ -1820,7 +2000,7 @@ private struct SettingsDetail: View {
                         .accessibilityLabel("View latest release")
                     }
                 }
-                .stagger(index: 4, generation: presentation.generation)
+                .stagger(index: 6, generation: presentation.generation)
 
                 if let notice = model.updateCheckNotice {
                     Text(notice)
@@ -1852,7 +2032,7 @@ private struct SettingsDetail: View {
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
             }
-            .stagger(index: 5, generation: presentation.generation)
+            .stagger(index: 7, generation: presentation.generation)
 
             Button("Quit Yeobun") {
                 model.quit()
@@ -1861,8 +2041,81 @@ private struct SettingsDetail: View {
             .foregroundStyle(.red)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 4)
-            .stagger(index: 6, generation: presentation.generation)
+            .stagger(index: 8, generation: presentation.generation)
         }
+    }
+
+    private func remoteField(_ prompt: String, text: Binding<String>) -> some View {
+        TextField(prompt, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(ModuleColor.offFill)
+            )
+            .onSubmit { addRemote() }
+    }
+
+    private func remoteRow(_ server: RemoteServer) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(server.name)
+                        .font(.system(size: 12, weight: .medium))
+                    Text(server.subtitle)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if model.remoteTestingID == server.id {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityLabel("Testing \(server.name)")
+                }
+                Button("Test") {
+                    model.testRemote(server)
+                }
+                .controlSize(.small)
+                .disabled(model.remoteTestingID != nil)
+                .accessibilityLabel("Test \(server.name)")
+                Button {
+                    model.removeRemote(server)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(server.name)")
+            }
+            if let notice = model.remoteTestNotice[server.id] {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func addRemote() {
+        if let error = model.addRemote(
+            name: remoteName,
+            host: remoteHost,
+            user: remoteUser,
+            port: remotePort,
+            identity: remoteIdentity
+        ) {
+            model.remoteAddNotice = error
+            return
+        }
+        remoteName = ""
+        remoteHost = ""
+        remoteUser = ""
+        remotePort = ""
+        remoteIdentity = ""
+        model.remoteAddNotice = nil
     }
 }
 

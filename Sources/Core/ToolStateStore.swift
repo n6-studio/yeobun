@@ -38,6 +38,8 @@ struct ToolState: Codable, Equatable {
     var keyboardBacklightDidForce: Bool = false
     var keyboardBacklightSavedBrightness: Float = 0
     var keyboardBacklightSavedAuto: Bool = false
+    /// External SSH hosts to glance at from the Stats tab.
+    var remotes: [RemoteServer] = []
 
     init() {}
 
@@ -78,6 +80,9 @@ struct ToolState: Codable, Equatable {
         keyboardBacklightDidForce = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightDidForce) ?? false
         keyboardBacklightSavedBrightness = try container.decodeIfPresent(Float.self, forKey: .keyboardBacklightSavedBrightness) ?? 0
         keyboardBacklightSavedAuto = try container.decodeIfPresent(Bool.self, forKey: .keyboardBacklightSavedAuto) ?? false
+        remotes = RemoteCatalog.clean(
+            try container.decodeIfPresent([RemoteServer].self, forKey: .remotes) ?? []
+        )
         if menuBarHideEnabled {
             menuBarHidden = true
         }

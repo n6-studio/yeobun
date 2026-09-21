@@ -13,6 +13,111 @@ enum CLICommands {
         print(humanMac(StatusBuilder.macStatus()))
     }
 
+    static func remote(_ action: CLIRemoteAction, json: Bool) throws {
+        switch action {
+        case .list:
+            emitRemotes(RemoteCatalog.current(), json: json)
+        case .add(let host, let name, let user, let port, let identity):
+            let server = try mapToolError {
+                try RemoteCatalog.make(
+                    host: host,
+                    name: name,
+                    user: user,
+                    port: port,
+                    identityPath: identity
+                )
+            }
+            let next = try mapToolError { try RemoteCatalog.adding(server, to: RemoteCatalog.current()) }
+            RemoteCatalog.save(next)
+            emitRemotes(next, json: json)
+        case .remove(let key):
+            let next = try mapToolError { try RemoteCatalog.removing(key, from: RemoteCatalog.current()) }
+            RemoteCatalog.save(next)
+            emitRemotes(next, json: json)
+        case .status(let key):
+            try remoteStatus(key, json: json)
+        }
+    }
+
+    private static func remoteStatus(_ key: String?, json: Bool) throws {
+        let servers = RemoteCatalog.current()
+        if servers.isEmpty {
+            throw CLIError.failed("No remote servers yet. Add one: yeobun remote add <host>")
+        }
+        let selected: [RemoteServer]
+        if let key {
+            selected = [try mapToolError { try RemoteCatalog.match(key, in: servers) }]
+        } else {
+            selected = servers
+        }
+        var results: [RemoteStatusJSON] = []
+        var failed = false
+        for server in selected {
+            do {
+                let sample = try RemoteProbe.sampleOnce(server)
+                results.append(StatusBuilder.remoteStatus(server, sample: sample))
+            } catch {
+                failed = true
+                let notice = error.localizedDescription
+                let status: RemoteLinkStatus
+                if let probe = error as? RemoteProbeError {
+                    status = probe.status
+                } else {
+                    status = .offline
+                }
+                results.append(
+                    StatusBuilder.remoteStatus(
+                        server,
+                        sample: .failed(status, notice: notice)
+                    )
+                )
+            }
+        }
+        if json {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(results), let text = String(data: data, encoding: .utf8) {
+                print(text)
+            }
+        } else {
+            for status in results {
+                print(humanLine(status.name, humanRemoteLive(status)))
+            }
+        }
+        if failed {
+            throw CLIError.failed("One or more remotes could not be reached.")
+        }
+    }
+
+    private static func emitRemotes(_ servers: [RemoteServer], json: Bool) {
+        if json {
+            emit(StatusBuilder.make(includeMac: false), json: true)
+            return
+        }
+        if servers.isEmpty {
+            print("No remote servers yet. Add one: yeobun remote add <host>")
+            return
+        }
+        for server in servers {
+            print(humanLine(server.name, server.subtitle))
+        }
+    }
+
+    private static func mapToolError<T>(_ body: () throws -> T) throws -> T {
+        do {
+            return try body()
+        } catch let error as ToolError {
+            switch error {
+            case .permission(let message):
+                throw CLIError.permission(message)
+            case .failed(let message):
+                throw CLIError.failed(message)
+            }
+        } catch {
+            throw CLIError.failed(error.localizedDescription)
+        }
+    }
+
     static func keyboard(_ action: CLISwitch, json: Bool) throws {
         try run(.keyboard, action)
         emit(StatusBuilder.make(includeMac: false), json: json, focus: .keyboard)
@@ -155,6 +260,11 @@ enum CLICommands {
             print(humanLine("awake", humanAwake(snapshot.awake)))
             print(humanLine("menubar", humanMenuBar(snapshot.menubar)))
             print(humanLine("voice", humanVoice(snapshot.voice)))
+            if snapshot.remotes.isEmpty {
+                print(humanLine("remote", "none"))
+            } else {
+                print(humanLine("remote", "\(snapshot.remotes.count) configured"))
+            }
             if let mac = snapshot.mac {
                 print(humanLine("mac", humanMac(mac)))
             }
@@ -253,6 +363,29 @@ enum CLICommands {
             )
         }
         return parts.joined(separator: "  ")
+    }
+
+    private static func humanRemoteLive(_ status: RemoteStatusJSON) -> String {
+        if status.status != "ok" {
+            return status.notice ?? status.status
+        }
+        var parts: [String] = []
+        if let cpu = status.cpuPercent {
+            parts.append("CPU \(cpu)%")
+        }
+        if let used = status.ramUsedBytes, let total = status.ramTotalBytes, total > 0 {
+            parts.append("RAM \(formatGB(used)) / \(formatGB(total))")
+        }
+        if let load = status.load1 {
+            parts.append(String(format: "load %.2f", load))
+        }
+        if let diskUsed = status.diskUsedBytes, let diskTotal = status.diskTotalBytes, diskTotal > 0 {
+            parts.append("disk \(formatGB(diskTotal - diskUsed)) free")
+        }
+        if let uptime = status.uptimeSeconds, uptime > 0 {
+            parts.append("up \(StatsFormat.uptime(TimeInterval(uptime)))")
+        }
+        return parts.isEmpty ? "ok" : parts.joined(separator: "  ")
     }
 
     private static func formatRemaining(_ seconds: Int) -> String {

@@ -35,7 +35,7 @@ final class PanelPresentation: ObservableObject {
     }
 }
 
-enum PanelRoute: Equatable {
+enum PanelRoute: Equatable, Hashable {
     case home
     case keyboard
     case scroll
@@ -47,6 +47,7 @@ enum PanelRoute: Equatable {
     case battery
     case network
     case storage
+    case remote(UUID)
     case settings
 
     var title: String {
@@ -62,6 +63,7 @@ enum PanelRoute: Equatable {
         case .battery: ToolID.battery.title
         case .network: ToolID.network.title
         case .storage: ToolID.storage.title
+        case .remote: "Remote"
         case .settings: "Settings"
         }
     }
@@ -88,7 +90,71 @@ enum HomeTab: String, CaseIterable, Identifiable {
     }
 }
 
-typealias HomeTool = ToolID
+enum HomeItem: Hashable, Identifiable {
+    case tool(ToolID)
+    case remote(UUID)
+
+    var id: String { token }
+
+    var token: String {
+        switch self {
+        case .tool(let id): id.rawValue
+        case .remote(let id): "remote:\(id.uuidString)"
+        }
+    }
+
+    init?(token: String) {
+        if token.hasPrefix("remote:") {
+            let raw = String(token.dropFirst("remote:".count))
+            guard let id = UUID(uuidString: raw) else { return nil }
+            self = .remote(id)
+            return
+        }
+        guard let tool = ToolID(rawValue: token) else { return nil }
+        self = .tool(tool)
+    }
+
+    var tab: HomeTab {
+        switch self {
+        case .tool(let id): id.tab
+        case .remote: .stats
+        }
+    }
+
+    var outline: String {
+        switch self {
+        case .tool(let id): id.outline
+        case .remote: "server.rack"
+        }
+    }
+
+    var fill: String {
+        switch self {
+        case .tool(let id): id.fill
+        case .remote: "server.rack"
+        }
+    }
+
+    var opticalNudge: CGSize {
+        switch self {
+        case .tool(let id): id.opticalNudge
+        case .remote: .zero
+        }
+    }
+
+    var accent: Color {
+        switch self {
+        case .tool(let id): id.accent
+        case .remote: ModuleColor.machine
+        }
+    }
+
+    static var builtins: [HomeItem] {
+        ToolID.allCases.map { .tool($0) }
+    }
+}
+
+typealias HomeTool = HomeItem
 
 extension ToolID {
     var title: String {

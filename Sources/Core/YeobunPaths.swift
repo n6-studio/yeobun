@@ -23,6 +23,22 @@ enum YeobunPaths {
         applicationSupport.appendingPathComponent("state.json")
     }
 
+    /// Mux sockets. `/tmp` stays under Darwin's 104-byte Unix-socket limit;
+    /// `Library/Caches/.../%C` does not, and ssh also appends a mkstemp suffix.
+    static var sshControlDirectory: URL {
+        URL(fileURLWithPath: "/tmp/yeobun-ssh", isDirectory: true)
+    }
+
+    /// OpenSSH interpolates `%C` (hash of local host, remote host, port, user).
+    static var sshControlPath: String {
+        sshControlDirectory.appendingPathComponent("%C").path
+    }
+
+    /// Quotes the path so a space in the home folder is still one ssh option.
+    static var sshControlPathOption: String {
+        "ControlPath=\"\(sshControlPath)\""
+    }
+
     static var executableDirectory: URL {
         let bundled = Bundle.main.executableURL?.deletingLastPathComponent()
         if let bundled, FileManager.default.fileExists(atPath: helperURL(in: bundled).path) {

@@ -58,6 +58,8 @@ struct CLIRequest {
             try CLICommands.voice(action, json: json)
         case .mac:
             try CLICommands.mac(json: json)
+        case .remote(let action):
+            try CLICommands.remote(action, json: json)
         }
     }
 }
@@ -72,6 +74,14 @@ enum CLICommand {
     case menuBar(CLISwitch)
     case voice(CLIVoiceAction)
     case mac
+    case remote(CLIRemoteAction)
+}
+
+enum CLIRemoteAction {
+    case list
+    case add(host: String, name: String?, user: String?, port: Int?, identity: String?)
+    case remove(String)
+    case status(String?)
 }
 
 enum CLIVoiceAction {

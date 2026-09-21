@@ -328,7 +328,7 @@ final class MenuBarHider {
         let open = NSMenuItem(title: "Open Yeobun", action: #selector(openFromMenu), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
-        let off = NSMenuItem(title: "Turn off \(HomeTool.menuBar.title)", action: #selector(turnOffFromMenu), keyEquivalent: "")
+        let off = NSMenuItem(title: "Turn off \(ToolID.menuBar.title)", action: #selector(turnOffFromMenu), keyEquivalent: "")
         off.target = self
         menu.addItem(off)
 

@@ -160,8 +160,20 @@ final class AppModel: ObservableObject {
             syncStatsSampling()
         }
     }
-    @Published var visibleHomeTools: [HomeTool]
-    @Published var hiddenHomeTools: [HomeTool]
+    @Published var visibleHomeTools: [HomeItem]
+    @Published var hiddenHomeTools: [HomeItem]
+    @Published var remotes: [RemoteServer] {
+        didSet {
+            guard remotes != oldValue else { return }
+            ToolStateStore.shared.update { $0.remotes = remotes }
+            reconcileRemoteHomeItems()
+            syncRemoteSampling()
+        }
+    }
+    @Published var remoteSamples: [UUID: RemoteSample] = [:]
+    @Published var remoteAddNotice: String?
+    @Published var remoteTestingID: UUID?
+    @Published var remoteTestNotice: [UUID: String] = [:]
     @Published var homeTab: HomeTab {
         didSet {
             guard homeTab != oldValue else { return }
@@ -182,6 +194,7 @@ final class AppModel: ObservableObject {
     private var awakeTick: Timer?
     private let devices = DeviceMonitor()
     private let statsService = SystemStatsService()
+    private let remoteStatsService = RemoteStatsService()
     private var wakeObserver: NSObjectProtocol?
     private var accessibilityTimer: Timer?
     private var updateCheckTask: URLSessionDataTask?
@@ -235,6 +248,7 @@ final class AppModel: ObservableObject {
         voiceSilenceSeconds = state.voiceSilenceSeconds
         voiceTypesText = state.voiceTypesText
         voiceVocabulary = state.voiceVocabulary
+        remotes = RemoteCatalog.clean(state.remotes)
         if defaults.object(forKey: Keys.launchAtLogin) == nil {
             launchAtLogin = true
             defaults.set(true, forKey: Keys.launchAtLogin)
@@ -262,17 +276,18 @@ final class AppModel: ObservableObject {
         } else {
             homeTab = .tools
         }
+        reconcileRemoteHomeItems()
     }
 
-    var tabVisibleHomeTools: [HomeTool] {
+    var tabVisibleHomeTools: [HomeItem] {
         visibleHomeTools.filter { $0.tab == homeTab }
     }
 
-    var tabHiddenHomeTools: [HomeTool] {
+    var tabHiddenHomeTools: [HomeItem] {
         hiddenHomeTools.filter { $0.tab == homeTab }
     }
 
-    func hideHomeTool(_ tool: HomeTool) {
+    func hideHomeTool(_ tool: HomeItem) {
         guard let index = visibleHomeTools.firstIndex(of: tool) else { return }
         visibleHomeTools.remove(at: index)
         if !hiddenHomeTools.contains(tool) {
@@ -281,7 +296,7 @@ final class AppModel: ObservableObject {
         persistHomeLayout()
     }
 
-    func showHomeTool(_ tool: HomeTool) {
+    func showHomeTool(_ tool: HomeItem) {
         guard let index = hiddenHomeTools.firstIndex(of: tool) else { return }
         hiddenHomeTools.remove(at: index)
         if !visibleHomeTools.contains(tool) {
@@ -290,7 +305,7 @@ final class AppModel: ObservableObject {
         persistHomeLayout()
     }
 
-    func moveVisibleHomeTool(_ tool: HomeTool, to destination: Int) {
+    func moveVisibleHomeTool(_ tool: HomeItem, to destination: Int) {
         let tab = tool.tab
         var subset = visibleHomeTools.filter { $0.tab == tab }
         guard let from = subset.firstIndex(of: tool) else { return }
@@ -300,7 +315,7 @@ final class AppModel: ObservableObject {
             fromOffsets: IndexSet(integer: from),
             toOffset: clamped > from ? clamped + 1 : clamped
         )
-        var next: [HomeTool] = []
+        var next: [HomeItem] = []
         var subsetIndex = 0
         for item in visibleHomeTools {
             if item.tab == tab {
@@ -315,32 +330,52 @@ final class AppModel: ObservableObject {
     }
 
     private func persistHomeLayout() {
-        UserDefaults.standard.set(visibleHomeTools.map(\.rawValue), forKey: Keys.visibleHomeTools)
-        UserDefaults.standard.set(hiddenHomeTools.map(\.rawValue), forKey: Keys.hiddenHomeTools)
+        UserDefaults.standard.set(visibleHomeTools.map(\.token), forKey: Keys.visibleHomeTools)
+        UserDefaults.standard.set(hiddenHomeTools.map(\.token), forKey: Keys.hiddenHomeTools)
     }
 
-    private static func loadHomeLayout(defaults: UserDefaults) -> (visible: [HomeTool], hidden: [HomeTool]) {
+    private static func loadHomeLayout(defaults: UserDefaults) -> (visible: [HomeItem], hidden: [HomeItem]) {
         let storedVisible = defaults.stringArray(forKey: Keys.visibleHomeTools)
         let storedHidden = defaults.stringArray(forKey: Keys.hiddenHomeTools)
         guard storedVisible != nil || storedHidden != nil else {
-            return (Array(HomeTool.allCases), [])
+            return (HomeItem.builtins, [])
         }
-        var visible = uniqued((storedVisible ?? []).compactMap(HomeTool.init(rawValue:)))
-        var hidden = uniqued((storedHidden ?? []).compactMap(HomeTool.init(rawValue:)))
+        var visible = uniqued((storedVisible ?? []).compactMap(HomeItem.init(token:)))
+        var hidden = uniqued((storedHidden ?? []).compactMap(HomeItem.init(token:)))
         hidden.removeAll(where: visible.contains)
         let known = Set(visible).union(hidden)
-        for tool in HomeTool.allCases where !known.contains(tool) {
-            visible.append(tool)
+        for item in HomeItem.builtins where !known.contains(item) {
+            visible.append(item)
         }
         if visible.isEmpty, hidden.isEmpty {
-            return (Array(HomeTool.allCases), [])
+            return (HomeItem.builtins, [])
         }
         return (visible, hidden)
     }
 
-    private static func uniqued(_ tools: [HomeTool]) -> [HomeTool] {
-        var seen = Set<HomeTool>()
+    private static func uniqued(_ tools: [HomeItem]) -> [HomeItem] {
+        var seen = Set<HomeItem>()
         return tools.filter { seen.insert($0).inserted }
+    }
+
+    private func reconcileRemoteHomeItems() {
+        let ids = Set(remotes.map(\.id))
+        visibleHomeTools.removeAll { item in
+            if case .remote(let id) = item { return !ids.contains(id) }
+            return false
+        }
+        hiddenHomeTools.removeAll { item in
+            if case .remote(let id) = item { return !ids.contains(id) }
+            return false
+        }
+        let known = Set(visibleHomeTools).union(hiddenHomeTools)
+        for remote in remotes {
+            let item = HomeItem.remote(remote.id)
+            if !known.contains(item) {
+                visibleHomeTools.append(item)
+            }
+        }
+        persistHomeLayout()
     }
 
     var activeMenuBarTools: [ToolID] {
@@ -455,6 +490,127 @@ final class AppModel: ObservableObject {
         return UsageLevel(fraction: volume.usedFraction)
     }
 
+    func title(for item: HomeItem) -> String {
+        switch item {
+        case .tool(let id): id.title
+        case .remote(let id): remotes.first(where: { $0.id == id })?.name ?? "Remote"
+        }
+    }
+
+    func remote(for id: UUID) -> RemoteServer? {
+        remotes.first(where: { $0.id == id })
+    }
+
+    func remoteSample(_ id: UUID) -> RemoteSample {
+        remoteSamples[id] ?? .connecting()
+    }
+
+    func remoteCPULabel(_ id: UUID) -> String {
+        let sample = remoteSample(id)
+        switch sample.status {
+        case .connecting: return "…"
+        case .ok: return sample.cpuReady ? StatsFormat.percent(sample.cpuFraction) : "…"
+        case .auth: return "Needs key"
+        case .unsupported: return "Needs Linux"
+        case .offline: return "Offline"
+        }
+    }
+
+    func remoteRAMLabel(_ id: UUID) -> String {
+        let sample = remoteSample(id)
+        switch sample.status {
+        case .connecting: return "…"
+        case .ok:
+            guard sample.ramTotal > 0 else { return "…" }
+            return "\(StatsFormat.gigabytes(sample.ramUsed)) / \(StatsFormat.gigabytes(sample.ramTotal))"
+        case .auth, .unsupported, .offline:
+            return "—"
+        }
+    }
+
+    func remoteCPULevel(_ id: UUID) -> UsageLevel {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.cpuReady else { return .normal }
+        return UsageLevel(fraction: sample.cpuFraction)
+    }
+
+    func remoteRAMLevel(_ id: UUID) -> UsageLevel {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.ramTotal > 0 else { return .normal }
+        return UsageLevel(fraction: sample.ramFraction)
+    }
+
+    func remoteDiskLevel(_ id: UUID) -> UsageLevel {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.diskTotal > 0 else { return .normal }
+        return UsageLevel(fraction: sample.diskFraction)
+    }
+
+    func addRemote(name: String, host: String, user: String, port: String, identity: String) -> String? {
+        do {
+            let parsedPort = try parsePort(port)
+            let server = try RemoteCatalog.make(
+                host: host,
+                name: name,
+                user: user,
+                port: parsedPort,
+                identityPath: identity
+            )
+            remotes = try RemoteCatalog.adding(server, to: remotes)
+            remoteAddNotice = nil
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func removeRemote(_ server: RemoteServer) {
+        remotes = remotes.filter { $0.id != server.id }
+        remoteSamples[server.id] = nil
+        remoteTestNotice[server.id] = nil
+        if remoteTestingID == server.id {
+            remoteTestingID = nil
+        }
+    }
+
+    func testRemote(_ server: RemoteServer) {
+        remoteTestingID = server.id
+        remoteTestNotice[server.id] = nil
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let sample = try RemoteProbe.sampleOnce(server)
+                let cpu = sample.cpuReady ? StatsFormat.percent(sample.cpuFraction) : "…"
+                let ram: String
+                if sample.ramTotal > 0 {
+                    ram = "\(StatsFormat.gigabytes(sample.ramUsed)) / \(StatsFormat.gigabytes(sample.ramTotal))"
+                } else {
+                    ram = "—"
+                }
+                DispatchQueue.main.async {
+                    guard self?.remoteTestingID == server.id else { return }
+                    self?.remoteTestingID = nil
+                    self?.remoteTestNotice[server.id] = "CPU \(cpu), RAM \(ram)"
+                    self?.remoteSamples[server.id] = sample
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    guard self?.remoteTestingID == server.id else { return }
+                    self?.remoteTestingID = nil
+                    self?.remoteTestNotice[server.id] = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    private func parsePort(_ text: String) throws -> Int? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return nil }
+        guard let value = Int(trimmed) else {
+            throw ToolError.failed("Port must be a number.")
+        }
+        return value
+    }
+
     var menuBarStatsText: String? {
         switch menuBarStats {
         case .off:
@@ -543,6 +699,7 @@ final class AppModel: ObservableObject {
         voiceSession.stop()
         voiceHotKeys.unregister()
         statsService.stop()
+        remoteStatsService.stop()
         updateCheckEpoch += 1
         updateCheckTask?.cancel()
         updateCheckTask = nil
@@ -564,19 +721,36 @@ final class AppModel: ObservableObject {
 
     private func syncStatsSampling() {
         let menuWantsStats = menuBarStats != .off
-        guard panelWantsStats || menuWantsStats else {
+        if panelWantsStats || menuWantsStats {
+            statsService.onUpdate = { [weak self] sample in
+                DispatchQueue.main.async {
+                    self?.stats = sample
+                }
+            }
+            statsService.start(
+                interval: panelWantsStats ? 1.0 : 2.0,
+                detail: panelWantsStats
+            )
+        } else {
             statsService.stop()
+        }
+        syncRemoteSampling()
+    }
+
+    private func syncRemoteSampling() {
+        guard panelWantsStats, !remotes.isEmpty else {
+            remoteStatsService.stop()
+            if !panelWantsStats {
+                remoteSamples = [:]
+            }
             return
         }
-        statsService.onUpdate = { [weak self] sample in
+        remoteStatsService.onUpdate = { [weak self] samples in
             DispatchQueue.main.async {
-                self?.stats = sample
+                self?.remoteSamples = samples
             }
         }
-        statsService.start(
-            interval: panelWantsStats ? 1.0 : 2.0,
-            detail: panelWantsStats
-        )
+        remoteStatsService.start(servers: remotes, interval: 2.0)
     }
 
     func toggleKeyboard() {
@@ -1519,6 +1693,10 @@ final class AppModel: ObservableObject {
         voiceSilenceSeconds = state.voiceSilenceSeconds
         voiceTypesText = state.voiceTypesText
         voiceVocabulary = state.voiceVocabulary
+        let nextRemotes = RemoteCatalog.clean(state.remotes)
+        if nextRemotes != remotes {
+            remotes = nextRemotes
+        }
         refreshKeyboardStatus(alignBacklight: true)
         refreshLidStatus()
         restoreAwakeIfNeeded()

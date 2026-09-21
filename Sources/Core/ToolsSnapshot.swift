@@ -110,7 +110,34 @@ struct ToolsSnapshot: Encodable {
     var awake: AwakeStatusJSON
     var menubar: MenuBarStatusJSON
     var voice: VoiceStatusJSON
+    var remotes: [RemoteConfigJSON]
     var mac: MacStatusJSON?
+}
+
+struct RemoteConfigJSON: Encodable {
+    var id: String
+    var name: String
+    var host: String
+    var user: String?
+    var port: Int?
+    var identity: String?
+}
+
+struct RemoteStatusJSON: Encodable {
+    var id: String
+    var name: String
+    var host: String
+    var status: String
+    var notice: String?
+    var cpuPercent: Int?
+    var ramUsedBytes: UInt64?
+    var ramTotalBytes: UInt64?
+    var load1: Double?
+    var load5: Double?
+    var load15: Double?
+    var uptimeSeconds: Int?
+    var diskUsedBytes: UInt64?
+    var diskTotalBytes: UInt64?
 }
 
 enum StatusBuilder {
@@ -167,6 +194,16 @@ enum StatusBuilder {
                 microphone: voice.microphone,
                 notice: voice.notice
             ),
+            remotes: RemoteCatalog.current().map { server in
+                RemoteConfigJSON(
+                    id: server.id.uuidString,
+                    name: server.name,
+                    host: server.host,
+                    user: server.user,
+                    port: server.port,
+                    identity: server.identityPath
+                )
+            },
             mac: includeMac ? macStatus() : nil
         )
     }
@@ -201,6 +238,26 @@ enum StatusBuilder {
                     ramBytes: $0.ramBytes
                 )
             }
+        )
+    }
+
+    static func remoteStatus(_ server: RemoteServer, sample: RemoteSample) -> RemoteStatusJSON {
+        let live = sample.status == .ok
+        return RemoteStatusJSON(
+            id: server.id.uuidString,
+            name: server.name,
+            host: server.host,
+            status: sample.status.rawValue,
+            notice: sample.notice,
+            cpuPercent: live && sample.cpuReady ? Int((sample.cpuFraction * 100).rounded()) : nil,
+            ramUsedBytes: live && sample.ramTotal > 0 ? sample.ramUsed : nil,
+            ramTotalBytes: live && sample.ramTotal > 0 ? sample.ramTotal : nil,
+            load1: live ? sample.load1 : nil,
+            load5: live ? sample.load5 : nil,
+            load15: live ? sample.load15 : nil,
+            uptimeSeconds: live && sample.uptimeSeconds > 0 ? Int(sample.uptimeSeconds.rounded(.down)) : nil,
+            diskUsedBytes: live && sample.diskTotal > 0 ? sample.diskUsed : nil,
+            diskTotalBytes: live && sample.diskTotal > 0 ? sample.diskTotal : nil
         )
     }
 
