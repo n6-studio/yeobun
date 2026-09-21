@@ -321,8 +321,8 @@ private struct HomeGrid: View {
                 lines: [
                     InfoMetric(label: "CPU", value: model.cpuPercentLabel, level: model.cpuUsageLevel),
                     InfoMetric(label: "RAM", value: model.ramShortLabel, level: model.ramUsageLevel)
-                ],
-                accessibilityValue: "CPU \(model.cpuPercentLabel), RAM \(model.ramShortLabel)"
+                ] + powerMetric(model.powerLabel),
+                accessibilityValue: accessibilityCPURam(cpu: model.cpuPercentLabel, ram: model.ramShortLabel, power: model.powerLabel)
             )
         case .tool(.battery):
             InfoStatsTile(
@@ -369,8 +369,12 @@ private struct HomeGrid: View {
                 lines: [
                     InfoMetric(label: "CPU", value: model.remoteCPULabel(id), level: model.remoteCPULevel(id)),
                     InfoMetric(label: "RAM", value: model.remoteRAMLabel(id), level: model.remoteRAMLevel(id))
-                ],
-                accessibilityValue: "CPU \(model.remoteCPULabel(id)), RAM \(model.remoteRAMLabel(id))"
+                ] + powerMetric(model.remotePowerLabel(id)),
+                accessibilityValue: accessibilityCPURam(
+                    cpu: model.remoteCPULabel(id),
+                    ram: model.remoteRAMLabel(id),
+                    power: model.remotePowerLabel(id)
+                )
             )
         }
     }
@@ -383,6 +387,18 @@ private struct HomeGrid: View {
             return StatsFormat.durationMinutes(minutes)
         }
         return battery.isPluggedIn ? "Plugged in" : "On battery"
+    }
+
+    private func powerMetric(_ value: String?) -> [InfoMetric] {
+        guard let value else { return [] }
+        return [InfoMetric(label: "Power", value: value, level: .normal)]
+    }
+
+    private func accessibilityCPURam(cpu: String, ram: String, power: String?) -> String {
+        if let power {
+            return "CPU \(cpu), RAM \(ram), Power \(power)"
+        }
+        return "CPU \(cpu), RAM \(ram)"
     }
 
     private func cellDrag(for tool: HomeTool) -> some Gesture {
@@ -1557,8 +1573,13 @@ private struct MachineDetail: View {
                 )
                 .stagger(index: 2, generation: presentation.generation)
 
+                if let power = model.powerLabel {
+                    StatRow(label: "Power", value: power)
+                        .stagger(index: 3, generation: presentation.generation)
+                }
+
                 StatRow(label: "Pressure", value: model.stats.memoryPressure.label, level: model.memoryPressureLevel)
-                    .stagger(index: 3, generation: presentation.generation)
+                    .stagger(index: 4, generation: presentation.generation)
 
                 if model.stats.swapTotal > 0 {
                     StatRow(
@@ -1622,6 +1643,11 @@ private struct RemoteDetail: View {
                         level: model.remoteRAMLevel(id)
                     )
                     .stagger(index: 2, generation: presentation.generation)
+
+                    if let power = model.remotePowerLabel(id) {
+                        StatRow(label: "Power", value: power)
+                            .stagger(index: 3, generation: presentation.generation)
+                    }
 
                     if sample.diskTotal > 0 {
                         MeterRow(
@@ -1720,6 +1746,11 @@ private struct BatteryDetail: View {
 
                     StatRow(label: "Status", value: model.batteryStatusLabel)
                         .stagger(index: 1, generation: presentation.generation)
+
+                    if let watts = battery.watts {
+                        StatRow(label: "Power", value: StatsFormat.watts(watts))
+                            .stagger(index: 2, generation: presentation.generation)
+                    }
 
                     if let health = battery.health, !health.isEmpty {
                         StatRow(label: "Health", value: health)

@@ -206,6 +206,7 @@ enum RemoteProbe {
         sample.diskTotal = current.diskTotal
         sample.diskUsed = current.diskUsed
         sample.topProcesses = current.processes
+        sample.powerWatts = powerWatts(current: current, previous: previous)
 
         if let previous, previous.cpuTotal > 0, current.cpuTotal > previous.cpuTotal {
             let idleDelta = current.cpuIdle &- previous.cpuIdle
@@ -226,6 +227,22 @@ enum RemoteProbe {
         }
         sample.cpuHistory = nextHistory
         return sample
+    }
+
+    private static func powerWatts(current: RemoteRaw, previous: RemoteRaw?) -> Double? {
+        if let previous {
+            let interval = current.uptime - previous.uptime
+            let maxEnergy = current.energyMaxUj > 0 ? current.energyMaxUj : previous.energyMaxUj
+            if let watts = PowerStats.watts(
+                energyUj: current.energyUj,
+                previousEnergyUj: previous.energyUj,
+                maxEnergyUj: maxEnergy,
+                interval: interval
+            ) {
+                return watts
+            }
+        }
+        return PowerStats.watts(microwatts: current.powerMicrowatts)
     }
 
     /// POSIX sh, no single quotes, so it can sit inside `exec /bin/sh -c '…'`.
@@ -299,6 +316,113 @@ then
   read uptime idle < /proc/uptime
   printf "uptime=%s\n" "$uptime"
 fi
+energy_uj=0
+energy_max_uj=0
+energy_ok=0
+if [ -d /sys/class/powercap ]
+then
+  for path in /sys/class/powercap/intel-rapl:*
+  do
+    [ -r "$path/name" ] || continue
+    [ -r "$path/energy_uj" ] || continue
+    read name < "$path/name"
+    case "$name" in
+      package-*)
+        read uj < "$path/energy_uj"
+        case "$uj" in
+          ""|*[!0-9]*) continue ;;
+        esac
+        energy_uj=$((energy_uj + uj))
+        energy_ok=1
+        if [ -r "$path/max_energy_range_uj" ]
+        then
+          read mx < "$path/max_energy_range_uj"
+          case "$mx" in
+            ""|*[!0-9]*) ;;
+            *) energy_max_uj=$((energy_max_uj + mx)) ;;
+          esac
+        fi
+        ;;
+    esac
+  done
+fi
+if [ "$energy_ok" = 1 ]
+then
+  printf "energy_uj=%s\n" "$energy_uj"
+  printf "energy_max_uj=%s\n" "$energy_max_uj"
+fi
+power_uw=0
+if [ -d /sys/class/power_supply ]
+then
+  for ps in /sys/class/power_supply/*
+  do
+    [ "$power_uw" = 0 ] || break
+    if [ -r "$ps/power_now" ]
+    then
+      read p < "$ps/power_now"
+      case "$p" in
+        -*) p=${p#-} ;;
+      esac
+      case "$p" in
+        ""|*[!0-9]*) ;;
+        *)
+          if [ "$p" -gt 0 ]
+          then
+            power_uw=$p
+          fi
+          ;;
+      esac
+    elif [ -r "$ps/current_now" ] && [ -r "$ps/voltage_now" ]
+    then
+      read cur < "$ps/current_now"
+      read volt < "$ps/voltage_now"
+      case "$cur" in
+        -*) cur=${cur#-} ;;
+      esac
+      case "$volt" in
+        -*) volt=${volt#-} ;;
+      esac
+      case "$cur" in
+        ""|*[!0-9]*) cur=0 ;;
+      esac
+      case "$volt" in
+        ""|*[!0-9]*) volt=0 ;;
+      esac
+      if [ "$cur" -gt 0 ] && [ "$volt" -gt 0 ]
+      then
+        power_uw=$((cur * volt / 1000000))
+      fi
+    fi
+  done
+fi
+if [ "$power_uw" = 0 ] && [ -d /sys/class/hwmon ]
+then
+  for hw in /sys/class/hwmon/hwmon*
+  do
+    [ "$power_uw" = 0 ] || break
+    [ -r "$hw/name" ] || continue
+    [ -r "$hw/power1_input" ] || continue
+    read n < "$hw/name"
+    case "$n" in
+      power_meter|acpi_power_meter)
+        read p < "$hw/power1_input"
+        case "$p" in
+          ""|*[!0-9]*) ;;
+          *)
+            if [ "$p" -gt 0 ]
+            then
+              power_uw=$p
+            fi
+            ;;
+        esac
+        ;;
+    esac
+  done
+fi
+if [ "$power_uw" != 0 ]
+then
+  printf "power_uw=%s\n" "$power_uw"
+fi
 df -Pk / 2>/dev/null | {
   read header
   read fs blocks used avail cap mount
@@ -342,6 +466,9 @@ struct RemoteRaw {
     var uptime: TimeInterval = 0
     var diskTotal: UInt64 = 0
     var diskUsed: UInt64 = 0
+    var energyUj: UInt64 = 0
+    var energyMaxUj: UInt64 = 0
+    var powerMicrowatts: UInt64 = 0
     var processes: [ProcessUsage] = []
 
     static func parse(_ text: String) -> RemoteRaw {
@@ -374,6 +501,9 @@ struct RemoteRaw {
             case "uptime": raw.uptime = TimeInterval(value) ?? 0
             case "disk_total_kb": raw.diskTotal = kilobytes(value)
             case "disk_used_kb": raw.diskUsed = kilobytes(value)
+            case "energy_uj": raw.energyUj = UInt64(value) ?? 0
+            case "energy_max_uj": raw.energyMaxUj = UInt64(value) ?? 0
+            case "power_uw": raw.powerMicrowatts = UInt64(value) ?? 0
             default: break
             }
         }

@@ -127,6 +127,7 @@ final class SystemStatsService {
         sample.thermal = ProcessInfo.processInfo.thermalState
         sample.uptimeSeconds = ProcessInfo.processInfo.systemUptime
         sample.battery = BatteryStats.battery()
+        sample.powerWatts = sample.battery?.watts
         sample.network = network.sample()
         sample.bootVolume = DiskStats.bootVolume()
         if detail {

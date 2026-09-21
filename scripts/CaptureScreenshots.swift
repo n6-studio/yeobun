@@ -207,6 +207,7 @@ private func demoStats() -> SystemSample {
     sample.memoryPressure = .normal
     sample.thermal = .nominal
     sample.uptimeSeconds = ((2 * 24) + 4) * 3600
+    sample.powerWatts = 8.4
     sample.battery = BatterySample(
         percent: 0.82,
         isCharging: false,
@@ -215,7 +216,8 @@ private func demoStats() -> SystemSample {
         minutesToEmpty: 154,
         minutesToFull: nil,
         health: "Good",
-        cycleCount: 214
+        cycleCount: 214,
+        watts: 8.4
     )
     sample.accessories = [
         AccessoryBattery(name: "Magic Mouse", percent: 64),
@@ -272,6 +274,7 @@ private func demoRemoteSample() -> RemoteSample {
     sample.uptimeSeconds = ((12 * 24) + 3) * 3600
     sample.diskUsed = 48 * 1_073_741_824
     sample.diskTotal = 80 * 1_073_741_824
+    sample.powerWatts = 42
     sample.topProcesses = [
         ProcessUsage(pid: 1, name: "caddy", cpuPercent: 9, ramBytes: 180_000_000),
         ProcessUsage(pid: 2, name: "postgres", cpuPercent: 4, ramBytes: 420_000_000),

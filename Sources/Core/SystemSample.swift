@@ -33,6 +33,7 @@ struct BatterySample: Equatable {
     var minutesToFull: Int?
     var health: String?
     var cycleCount: Int?
+    var watts: Double? = nil
 }
 
 struct NetworkSample: Equatable {
@@ -86,6 +87,7 @@ struct SystemSample: Equatable {
 
     var thermal: ProcessInfo.ThermalState = .nominal
     var uptimeSeconds: TimeInterval = 0
+    var powerWatts: Double?
 
     var battery: BatterySample?
     var accessories: [AccessoryBattery] = []
@@ -149,6 +151,13 @@ enum StatsFormat {
 
     static func percent(_ fraction: Double) -> String {
         String(format: "%.0f%%", fraction * 100)
+    }
+
+    static func watts(_ watts: Double) -> String {
+        if watts >= 10 {
+            return String(format: "%.0f W", watts)
+        }
+        return String(format: "%.1f W", watts)
     }
 
     static func uptime(_ seconds: TimeInterval) -> String {

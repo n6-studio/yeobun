@@ -164,9 +164,9 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 </tr>
 </table>
 
-- **This Mac** — live CPU and RAM on the tile; detail adds pressure, swap, thermal state, uptime, and the top processes.
-- **Remote** — SSH hosts you add. Each one is a Stats tile with live CPU and RAM; detail adds load, disk, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
-- **Battery** — charge, time remaining, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
+- **This Mac** — live CPU and RAM on the tile, plus power in watts when this Mac reports it; detail adds pressure, swap, thermal state, uptime, and the top processes.
+- **Remote** — SSH hosts you add. Each one is a Stats tile with live CPU and RAM, plus power when the host exposes it; detail adds load, disk, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
+- **Battery** — charge, time remaining, power, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
 - **Network** — link type, Wi-Fi name when macOS allows it, local IP, live down/up.
 - **Storage** — used and free space on the boot volume, plus other mounted disks.
 
@@ -221,6 +221,6 @@ open ~/Applications/Yeobun.app
 - Scroll reverse needs Accessibility. Voice typing needs Microphone, plus Accessibility to type into other apps.
 - `yeobun voice on|off` is the master switch and is remembered. `yeobun voice start|stop` controls listening and needs the app open; the CLI never touches the microphone.
 - `yeobun voice vocab` lists the vocabulary; `vocab add <term> [--sounds-like <text>]`, `vocab remove <term>`, and `vocab clear` edit it. Adding a term that is already there merges the new sounds-like entries into it. The list is also under `voice.vocabulary` in the status JSON.
-- `yeobun remote` lists saved SSH servers. `remote add <host> [--name] [--user] [--port] [--identity]` and `remote remove <name-or-id>` edit the list. `remote status` probes live CPU, RAM, load, and disk (Linux). Human `yeobun status` only reports how many remotes are configured; live numbers are `yeobun remote status`.
+- `yeobun remote` lists saved SSH servers. `remote add <host> [--name] [--user] [--port] [--identity]` and `remote remove <name-or-id>` edit the list. `remote status` probes live CPU, RAM, load, disk, and power (Linux). Human `yeobun status` only reports how many remotes are configured; live numbers are `yeobun remote status`. Power is live watts when the host exposes them. Linux RAPL is often root-only, and many VMs report none.
 - Lid awake asks for an administrator password once.
 - Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

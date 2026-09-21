@@ -63,6 +63,7 @@ struct RemoteSample: Equatable {
     var uptimeSeconds: TimeInterval = 0
     var diskUsed: UInt64 = 0
     var diskTotal: UInt64 = 0
+    var powerWatts: Double?
     var topProcesses: [ProcessUsage] = []
 
     var ramFraction: Double {

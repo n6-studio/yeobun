@@ -34,7 +34,8 @@ enum BatteryStats {
                 minutesToEmpty: charging ? nil : toEmpty,
                 minutesToFull: charging ? toFull : nil,
                 health: registry.health ?? (description["BatteryHealth"] as? String),
-                cycleCount: registry.cycleCount
+                cycleCount: registry.cycleCount,
+                watts: registry.watts
             )
         }
         return nil
@@ -77,17 +78,34 @@ enum BatteryStats {
         return results
     }
 
-    private static func smartBattery() -> (cycleCount: Int?, health: String?) {
+    private static func smartBattery() -> (cycleCount: Int?, health: String?, watts: Double?) {
         let service = IOServiceGetMatchingService(
             kIOMainPortDefault,
             IOServiceMatching("AppleSmartBattery")
         )
-        guard service != 0 else { return (nil, nil) }
+        guard service != 0 else { return (nil, nil, nil) }
         defer { IOObjectRelease(service) }
+        let milliamps = int64Property(service, "InstantAmperage") ?? int64Property(service, "Amperage")
+        let millivolts = intProperty(service, "Voltage")
+        let watts: Double?
+        if let milliamps, let millivolts {
+            watts = PowerStats.watts(milliamps: signedMilliamps(milliamps), millivolts: millivolts)
+        } else {
+            watts = nil
+        }
         return (
             intProperty(service, "CycleCount"),
-            stringProperty(service, "BatteryHealth")
+            stringProperty(service, "BatteryHealth"),
+            watts
         )
+    }
+
+    /// InstantAmperage often arrives as a 16-bit signed value in a wider integer.
+    private static func signedMilliamps(_ raw: Int64) -> Int {
+        if raw > Int64(Int16.max) {
+            return Int(Int16(bitPattern: UInt16(truncatingIfNeeded: raw)))
+        }
+        return Int(raw)
     }
 
     private static func double(_ value: Any?) -> Double {
@@ -106,13 +124,21 @@ enum BatteryStats {
     }
 
     private static func intProperty(_ service: io_service_t, _ key: String) -> Int? {
+        numberProperty(service, key)?.intValue
+    }
+
+    private static func int64Property(_ service: io_service_t, _ key: String) -> Int64? {
+        numberProperty(service, key)?.int64Value
+    }
+
+    private static func numberProperty(_ service: io_service_t, _ key: String) -> NSNumber? {
         guard let unmanaged = IORegistryEntryCreateCFProperty(
             service,
             key as CFString,
             kCFAllocatorDefault,
             0
         ) else { return nil }
-        return (unmanaged.takeRetainedValue() as? NSNumber)?.intValue
+        return unmanaged.takeRetainedValue() as? NSNumber
     }
 
     private static func stringProperty(_ service: io_service_t, _ key: String) -> String? {

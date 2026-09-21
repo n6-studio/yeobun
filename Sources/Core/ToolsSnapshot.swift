@@ -80,6 +80,7 @@ struct MacStatusJSON: Encodable {
     var memoryPressure: String
     var thermal: String
     var uptimeSeconds: Int
+    var powerWatts: Double?
     var batteryPercent: Int?
     var batteryCharging: Bool?
     var diskUsedBytes: UInt64?
@@ -138,6 +139,7 @@ struct RemoteStatusJSON: Encodable {
     var uptimeSeconds: Int?
     var diskUsedBytes: UInt64?
     var diskTotalBytes: UInt64?
+    var powerWatts: Double?
 }
 
 enum StatusBuilder {
@@ -220,6 +222,7 @@ enum StatusBuilder {
             memoryPressure: sample.memoryPressure.label.lowercased(),
             thermal: StatsFormat.thermal(sample.thermal).lowercased(),
             uptimeSeconds: Int(sample.uptimeSeconds.rounded(.down)),
+            powerWatts: roundWatts(sample.powerWatts),
             batteryPercent: sample.battery.map { Int(($0.percent * 100).rounded()) },
             batteryCharging: sample.battery?.isCharging,
             diskUsedBytes: sample.bootVolume?.used,
@@ -257,7 +260,8 @@ enum StatusBuilder {
             load15: live ? sample.load15 : nil,
             uptimeSeconds: live && sample.uptimeSeconds > 0 ? Int(sample.uptimeSeconds.rounded(.down)) : nil,
             diskUsedBytes: live && sample.diskTotal > 0 ? sample.diskUsed : nil,
-            diskTotalBytes: live && sample.diskTotal > 0 ? sample.diskTotal : nil
+            diskTotalBytes: live && sample.diskTotal > 0 ? sample.diskTotal : nil,
+            powerWatts: live ? roundWatts(sample.powerWatts) : nil
         )
     }
 
@@ -266,5 +270,9 @@ enum StatusBuilder {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(snapshot)
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    static func roundWatts(_ watts: Double?) -> Double? {
+        watts.map { ($0 * 10).rounded() / 10 }
     }
 }

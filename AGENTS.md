@@ -30,8 +30,8 @@ Mimic **macOS Control Center**. Stay on SwiftUI + AppKit. Do not add a third-par
 - Keep awake: `Color.brown`
 - Hidden icons: `Color.teal`
 - Voice typing: `Color.red`
-- This Mac: always informational (never an On fill). Show **CPU and RAM** on the tile.
-- Remote SSH servers: always informational. One Stats tile per saved host; show **CPU and RAM**. Whole tile opens detail (the icon is not a toggle). Add/remove from Settings or `yeobun remote`. Linux hosts, SSH keys or ssh-agent only.
+- This Mac: always informational (never an On fill). Show **CPU and RAM** on the tile, and **Power** when this Mac reports watts.
+- Remote SSH servers: always informational. One Stats tile per saved host; show **CPU and RAM**, and **Power** when the host reports watts. Whole tile opens detail (the icon is not a toggle). Add/remove from Settings or `yeobun remote`. Linux hosts, SSH keys or ssh-agent only.
 - Battery, Network, Storage: always informational. Battery warns when charge is low; Storage warns when the disk is full.
 - Status on toggle tiles is `On` / `Off` (Built-in keyboard On = locked). Voice typing On = armed (shortcut registered); it reads `Listening` during a session and shows a spinner while it asks for the microphone or loads a language. Listening has its own switch in the detail view. Its Vocabulary group lists terms (hints for the recognizer) with optional "sounds like" rewrites; the same list is `yeobun voice vocab`. Keep awake shows remaining time when a duration is set.
 - Hover: brighten the tile fill (`offFillHover`, or a white wash when On). Icon circles brighten and scale to `1.06`. Press: `scale(0.96)`, 150ms, `cubic-bezier(0.2, 0, 0, 1)`.

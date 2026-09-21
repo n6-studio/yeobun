@@ -490,6 +490,10 @@ final class AppModel: ObservableObject {
         return UsageLevel(fraction: volume.usedFraction)
     }
 
+    var powerLabel: String? {
+        stats.powerWatts.map(StatsFormat.watts)
+    }
+
     func title(for item: HomeItem) -> String {
         switch item {
         case .tool(let id): id.title
@@ -540,6 +544,12 @@ final class AppModel: ObservableObject {
         return UsageLevel(fraction: sample.ramFraction)
     }
 
+    func remotePowerLabel(_ id: UUID) -> String? {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, let watts = sample.powerWatts else { return nil }
+        return StatsFormat.watts(watts)
+    }
+
     func remoteDiskLevel(_ id: UUID) -> UsageLevel {
         let sample = remoteSample(id)
         guard sample.status == .ok, sample.diskTotal > 0 else { return .normal }
@@ -586,10 +596,16 @@ final class AppModel: ObservableObject {
                 } else {
                     ram = "—"
                 }
+                let notice: String
+                if let watts = sample.powerWatts {
+                    notice = "CPU \(cpu), RAM \(ram), \(StatsFormat.watts(watts))"
+                } else {
+                    notice = "CPU \(cpu), RAM \(ram)"
+                }
                 DispatchQueue.main.async {
                     guard self?.remoteTestingID == server.id else { return }
                     self?.remoteTestingID = nil
-                    self?.remoteTestNotice[server.id] = "CPU \(cpu), RAM \(ram)"
+                    self?.remoteTestNotice[server.id] = notice
                     self?.remoteSamples[server.id] = sample
                 }
             } catch {

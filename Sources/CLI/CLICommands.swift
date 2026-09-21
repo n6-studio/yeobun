@@ -349,6 +349,9 @@ enum CLICommands {
         let total = formatGB(status.ramTotalBytes)
         var parts = ["CPU \(status.cpuPercent)%", "RAM \(used) / \(total)"]
         parts.append("pressure \(status.memoryPressure)")
+        if let watts = status.powerWatts {
+            parts.append(StatsFormat.watts(watts))
+        }
         if let diskUsed = status.diskUsedBytes, let diskTotal = status.diskTotalBytes, diskTotal > 0 {
             parts.append("disk \(formatGB(diskTotal - diskUsed)) free")
         }
@@ -375,6 +378,9 @@ enum CLICommands {
         }
         if let used = status.ramUsedBytes, let total = status.ramTotalBytes, total > 0 {
             parts.append("RAM \(formatGB(used)) / \(formatGB(total))")
+        }
+        if let watts = status.powerWatts {
+            parts.append(StatsFormat.watts(watts))
         }
         if let load = status.load1 {
             parts.append(String(format: "load %.2f", load))

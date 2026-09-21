@@ -50,7 +50,7 @@ enum CLIParser {
               it writes instead today, e.g. add kubectl --sounds-like "cube control"
     mac       This Mac
     remote    External SSH servers. add/remove saves the list; status probes
-              live CPU, RAM, load, and disk. Host can be an ssh config alias.
+              live CPU, RAM, load, disk, and power. Host can be an ssh config alias.
               Needs a key in ssh-agent or ~/.ssh; Linux hosts only.
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
