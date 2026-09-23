@@ -162,6 +162,12 @@ final class AppModel: ObservableObject {
     }
     @Published var visibleHomeTools: [HomeItem]
     @Published var hiddenHomeTools: [HomeItem]
+    @Published var pins: [HomePin] {
+        didSet {
+            guard pins != oldValue else { return }
+            UserDefaults.standard.set(pins.map(\.token), forKey: Keys.homePins)
+        }
+    }
     @Published var remotes: [RemoteServer] {
         didSet {
             guard remotes != oldValue else { return }
@@ -174,13 +180,6 @@ final class AppModel: ObservableObject {
     @Published var remoteAddNotice: String?
     @Published var remoteTestingID: UUID?
     @Published var remoteTestNotice: [UUID: String] = [:]
-    @Published var homeTab: HomeTab {
-        didSet {
-            guard homeTab != oldValue else { return }
-            UserDefaults.standard.set(homeTab.rawValue, forKey: Keys.homeTab)
-        }
-    }
-
     let timeoutChoices = [0, 5, 10, 15, 30, 60]
     let awakeDurationChoices = [0, 5, 10, 15, 30, 60, 120, 300]
     let menuBarStripIconSizeChoices = MenuBarTool.iconSizeChoices
@@ -217,7 +216,7 @@ final class AppModel: ObservableObject {
         static let menuBarStats = "menuBarStats"
         static let visibleHomeTools = "visibleHomeTools"
         static let hiddenHomeTools = "hiddenHomeTools"
-        static let homeTab = "homeTab"
+        static let homePins = "homePins"
         static let didLaunch = "didCompleteFirstLaunch"
     }
 
@@ -270,21 +269,65 @@ final class AppModel: ObservableObject {
         let layout = Self.loadHomeLayout(defaults: defaults)
         visibleHomeTools = layout.visible
         hiddenHomeTools = layout.hidden
-        if let raw = defaults.string(forKey: Keys.homeTab),
-           let stored = HomeTab(rawValue: raw) {
-            homeTab = stored
+        if let stored = defaults.stringArray(forKey: Keys.homePins) {
+            var seen = Set<HomePin>()
+            pins = stored.compactMap(HomePin.init(token:)).filter { seen.insert($0).inserted }
         } else {
-            homeTab = .tools
+            pins = HomePin.defaults
         }
+        migrateHiddenIconDefaults(defaults)
         reconcileRemoteHomeItems()
     }
 
-    var tabVisibleHomeTools: [HomeItem] {
-        visibleHomeTools.filter { $0.tab == homeTab }
+    /// One-time move from the old Grid / Medium / Medium strip to List / Large / Large.
+    private func migrateHiddenIconDefaults(_ defaults: UserDefaults) {
+        let key = "menuBarStripLargeListDefault"
+        if defaults.bool(forKey: key) { return }
+        defaults.set(true, forKey: key)
+        guard menuBarStripIconSize == 24,
+              menuBarStripLabelSize == 9,
+              menuBarStripLayout == .grid else { return }
+        menuBarStripIconSize = MenuBarTool.defaultIconSize
+        menuBarStripLabelSize = MenuBarTool.defaultLabelSize
+        menuBarStripLayout = .list
+        tools.menuBar.setStripIconSize(MenuBarTool.defaultIconSize)
+        tools.menuBar.setStripLabelSize(MenuBarTool.defaultLabelSize)
+        tools.menuBar.setStripLayout(.list)
     }
 
-    var tabHiddenHomeTools: [HomeItem] {
-        hiddenHomeTools.filter { $0.tab == homeTab }
+    /// Home rows. Storage is part of the Mac page, not its own row.
+    var listedHomeTools: [HomeItem] {
+        visibleHomeTools.filter(\.showsOnHome)
+    }
+
+    var listedHiddenHomeTools: [HomeItem] {
+        hiddenHomeTools.filter(\.showsOnHome)
+    }
+
+    func moveListedHomeTool(_ tool: HomeItem, to destination: Int) {
+        var listed = listedHomeTools
+        guard let from = listed.firstIndex(of: tool) else { return }
+        let dest = min(max(destination, 0), listed.count - 1)
+        guard from != dest else { return }
+        let item = listed.remove(at: from)
+        listed.insert(item, at: dest)
+        var next: [HomeItem] = []
+        var placed = false
+        for existing in visibleHomeTools {
+            if existing.showsOnHome {
+                if !placed {
+                    next.append(contentsOf: listed)
+                    placed = true
+                }
+            } else {
+                next.append(existing)
+            }
+        }
+        if !placed {
+            next.append(contentsOf: listed)
+        }
+        visibleHomeTools = next
+        persistHomeLayout()
     }
 
     func hideHomeTool(_ tool: HomeItem) {
@@ -306,27 +349,7 @@ final class AppModel: ObservableObject {
     }
 
     func moveVisibleHomeTool(_ tool: HomeItem, to destination: Int) {
-        let tab = tool.tab
-        var subset = visibleHomeTools.filter { $0.tab == tab }
-        guard let from = subset.firstIndex(of: tool) else { return }
-        let clamped = min(max(destination, 0), subset.count - 1)
-        guard from != clamped else { return }
-        subset.move(
-            fromOffsets: IndexSet(integer: from),
-            toOffset: clamped > from ? clamped + 1 : clamped
-        )
-        var next: [HomeItem] = []
-        var subsetIndex = 0
-        for item in visibleHomeTools {
-            if item.tab == tab {
-                next.append(subset[subsetIndex])
-                subsetIndex += 1
-            } else {
-                next.append(item)
-            }
-        }
-        visibleHomeTools = next
-        persistHomeLayout()
+        moveListedHomeTool(tool, to: destination)
     }
 
     private func persistHomeLayout() {
@@ -360,6 +383,10 @@ final class AppModel: ObservableObject {
 
     private func reconcileRemoteHomeItems() {
         let ids = Set(remotes.map(\.id))
+        pins.removeAll { pin in
+            if case .remote(let id) = pin.source { return !ids.contains(id) }
+            return false
+        }
         visibleHomeTools.removeAll { item in
             if case .remote(let id) = item { return !ids.contains(id) }
             return false
@@ -402,6 +429,35 @@ final class AppModel: ObservableObject {
     var ramShortLabel: String {
         guard stats.ramTotal > 0 else { return "…" }
         return "\(StatsFormat.gigabytes(stats.ramUsed)) / \(StatsFormat.gigabytes(stats.ramTotal))"
+    }
+
+    var ramGlanceLabel: String {
+        guard stats.ramTotal > 0 else { return "…" }
+        return StatsFormat.percent(ramFraction)
+    }
+
+    var networkGlanceLabel: String {
+        networkDownLabel
+    }
+
+    var networkDownLabel: String {
+        networkRate(stats.network.bytesInPerSecond, arrow: "↓")
+    }
+
+    var networkUpLabel: String {
+        networkRate(stats.network.bytesOutPerSecond, arrow: "↑")
+    }
+
+    var networkBothLabel: String {
+        if !stats.network.connected { return "Off" }
+        guard stats.network.ratesReady else { return "…" }
+        return "\(networkDownLabel)  \(networkUpLabel)"
+    }
+
+    private func networkRate(_ bytes: UInt64, arrow: String) -> String {
+        if !stats.network.connected { return "Off" }
+        guard stats.network.ratesReady else { return "…" }
+        return "\(StatsFormat.rate(bytes, compact: true))\(arrow)"
     }
 
     var ramFraction: Double {
@@ -494,10 +550,138 @@ final class AppModel: ObservableObject {
         stats.powerWatts.map(StatsFormat.watts)
     }
 
+    var macRowStats: [MacRowStat] {
+        var rows = [
+            MacRowStat(label: "CPU", value: cpuPercentLabel, level: cpuUsageLevel),
+            MacRowStat(label: "RAM", value: ramGlanceLabel, level: ramUsageLevel)
+        ]
+        if let power = powerLabel {
+            rows.append(MacRowStat(label: "PWR", value: power, level: .normal))
+        }
+        rows.append(MacRowStat(label: "STO", value: diskUsedLabel, level: diskUsageLevel))
+        if stats.network.connected || stats.network.ratesReady {
+            rows.append(MacRowStat(label: "NET", value: networkGlanceLabel, level: .normal))
+        }
+        return rows
+    }
+
+    func remoteRowStats(_ id: UUID) -> [MacRowStat] {
+        [
+            MacRowStat(label: "CPU", value: remoteCPULabel(id), level: remoteCPULevel(id)),
+            MacRowStat(label: "RAM", value: remoteRAMGlanceLabel(id), level: remoteRAMLevel(id)),
+            MacRowStat(label: "STO", value: remoteDiskGlanceLabel(id), level: remoteDiskLevel(id)),
+            MacRowStat(label: "PWR", value: remotePowerLabel(id) ?? "—", level: .normal)
+        ]
+    }
+
+    var macRowLine: String {
+        macRowStats.map { "\($0.label) \($0.value)" }.joined(separator: "  ")
+    }
+
     func title(for item: HomeItem) -> String {
         switch item {
         case .tool(let id): id.title
         case .remote(let id): remotes.first(where: { $0.id == id })?.name ?? "Remote"
+        }
+    }
+
+    func isPinned(_ pin: HomePin) -> Bool {
+        pins.contains(pin)
+    }
+
+    func togglePin(_ pin: HomePin) {
+        if let index = pins.firstIndex(of: pin) {
+            pins.remove(at: index)
+            return
+        }
+        guard pins.count < HomePin.maxCount else { return }
+        pins.append(pin)
+    }
+
+    func unpin(_ pin: HomePin) {
+        pins.removeAll { $0 == pin }
+    }
+
+    func glyph(for item: HomeItem) -> GlyphID {
+        switch item {
+        case .remote(let id):
+            GlyphID(remoteSymbol: remote(for: id)?.symbol ?? RemoteSymbol.fallback)
+        case .tool(let id):
+            id.glyph
+        }
+    }
+
+    func pinDisplay(_ pin: HomePin) -> PinDisplay? {
+        switch pin.source {
+        case .mac:
+            return PinDisplay(
+                pin: pin,
+                caption: pin.metric.title,
+                value: macPinValue(pin.metric),
+                level: macPinLevel(pin.metric),
+                glyph: .laptop,
+                route: macPinRoute(pin.metric),
+                accessibility: "Mac \(pin.metric.title) \(macPinValue(pin.metric))"
+            )
+        case .remote(let id):
+            guard let server = remote(for: id) else { return nil }
+            return PinDisplay(
+                pin: pin,
+                caption: pin.metric.title,
+                value: remotePinValue(id, pin.metric),
+                level: remotePinLevel(id, pin.metric),
+                glyph: GlyphID(remoteSymbol: server.symbol),
+                route: .remote(id),
+                accessibility: "\(server.name) \(pin.metric.title) \(remotePinValue(id, pin.metric))"
+            )
+        }
+    }
+
+    private func macPinValue(_ metric: PinMetric) -> String {
+        switch metric {
+        case .cpu: cpuPercentLabel
+        case .memory: ramGlanceLabel
+        case .storage: diskUsedLabel
+        case .network: networkBothLabel
+        case .down: networkDownLabel
+        case .up: networkUpLabel
+        case .power: powerLabel ?? "—"
+        case .battery: batteryPercentLabel
+        }
+    }
+
+    private func macPinLevel(_ metric: PinMetric) -> UsageLevel {
+        switch metric {
+        case .cpu: cpuUsageLevel
+        case .memory: ramUsageLevel
+        case .storage: diskUsageLevel
+        case .battery: batteryUsageLevel
+        case .network, .down, .up, .power: .normal
+        }
+    }
+
+    private func macPinRoute(_ metric: PinMetric) -> PanelRoute {
+        switch metric {
+        case .cpu, .memory, .storage, .power, .network, .down, .up, .battery: .machine
+        }
+    }
+
+    private func remotePinValue(_ id: UUID, _ metric: PinMetric) -> String {
+        switch metric {
+        case .cpu: remoteCPULabel(id)
+        case .memory: remoteRAMGlanceLabel(id)
+        case .storage: remoteDiskGlanceLabel(id)
+        case .power: remotePowerLabel(id) ?? "—"
+        case .network, .down, .up, .battery: "—"
+        }
+    }
+
+    private func remotePinLevel(_ id: UUID, _ metric: PinMetric) -> UsageLevel {
+        switch metric {
+        case .cpu: remoteCPULevel(id)
+        case .memory: remoteRAMLevel(id)
+        case .storage: remoteDiskLevel(id)
+        default: .normal
         }
     }
 
@@ -507,6 +691,16 @@ final class AppModel: ObservableObject {
 
     func remoteSample(_ id: UUID) -> RemoteSample {
         remoteSamples[id] ?? .connecting()
+    }
+
+    func remoteAvailabilityLabel(_ id: UUID) -> String {
+        switch remoteSample(id).status {
+        case .connecting: "Connecting..."
+        case .offline: "Offline"
+        case .auth: "Needs a key"
+        case .unsupported: "Needs Linux"
+        case .ok: ""
+        }
     }
 
     func remoteCPULabel(_ id: UUID) -> String {
@@ -550,10 +744,58 @@ final class AppModel: ObservableObject {
         return StatsFormat.watts(watts)
     }
 
+    struct RemotePowerNote: Equatable {
+        var message: String
+        var untilReboot: String?
+        var keep: String?
+    }
+
+    func remotePowerNote(_ id: UUID) -> RemotePowerNote? {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.powerWatts == nil else { return nil }
+        switch sample.powerHint {
+        case "chmod":
+            return RemotePowerNote(
+                message: "This user cannot read the power counters.",
+                untilReboot: "sudo chmod a+r /sys/class/powercap/intel-rapl:*/energy_uj",
+                keep: "printf '%s\\n' 'SUBSYSTEM==\"powercap\", ACTION==\"add\", RUN+=\"/bin/chmod a+r /sys/class/powercap/intel-rapl:*/energy_uj\"' | sudo tee /etc/udev/rules.d/99-rapl.rules >/dev/null && sudo udevadm control --reload-rules && sudo udevadm trigger"
+            )
+        case "none":
+            return RemotePowerNote(message: "This host does not report power.", untilReboot: nil, keep: nil)
+        default:
+            return nil
+        }
+    }
+
     func remoteDiskLevel(_ id: UUID) -> UsageLevel {
         let sample = remoteSample(id)
         guard sample.status == .ok, sample.diskTotal > 0 else { return .normal }
         return UsageLevel(fraction: sample.diskFraction)
+    }
+
+    func remoteRAMGlanceLabel(_ id: UUID) -> String {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.ramTotal > 0 else {
+            return sample.status == .connecting ? "…" : "—"
+        }
+        return StatsFormat.percent(sample.ramFraction)
+    }
+
+    func remoteDiskGlanceLabel(_ id: UUID) -> String {
+        let sample = remoteSample(id)
+        guard sample.status == .ok, sample.diskTotal > 0 else {
+            return sample.status == .connecting ? "…" : "—"
+        }
+        return StatsFormat.percent(sample.diskFraction)
+    }
+
+    func setRemoteSymbol(_ id: UUID, _ symbol: String) {
+        remotes = remotes.map { server in
+            guard server.id == id else { return server }
+            var copy = server
+            copy.symbol = RemoteSymbol.resolve(symbol)
+            return copy
+        }
     }
 
     func addRemote(name: String, host: String, user: String, port: String, identity: String) -> String? {
@@ -567,6 +809,24 @@ final class AppModel: ObservableObject {
                 identityPath: identity
             )
             remotes = try RemoteCatalog.adding(server, to: remotes)
+            remoteAddNotice = nil
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func updateRemote(id: UUID, name: String, host: String, user: String, port: String, identity: String) -> String? {
+        do {
+            let parsedPort = try parsePort(port)
+            let server = try RemoteCatalog.make(
+                host: host,
+                name: name,
+                user: user,
+                port: parsedPort,
+                identityPath: identity
+            )
+            remotes = try RemoteCatalog.replacing(id, with: server, in: remotes)
             remoteAddNotice = nil
             return nil
         } catch {

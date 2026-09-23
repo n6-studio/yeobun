@@ -26,8 +26,8 @@ final class MenuBarTool: ToggleTool {
     static let hiddenSize = 0
     static let iconSizeChoices = [20, 24, 32, hiddenSize]
     static let labelSizeChoices = [9, 11, 13, hiddenSize]
-    static let defaultIconSize = 24
-    static let defaultLabelSize = 9
+    static let defaultIconSize = 32
+    static let defaultLabelSize = 13
 
     /// `0` hides that part. Icons and labels cannot both be hidden.
     static func resolvedSizes(icon: Int, label: Int) -> (icon: Int, label: Int) {

@@ -16,9 +16,9 @@ struct ToolState: Codable, Equatable {
     var scrollHelperPID: Int = 0
     var menuBarHideEnabled: Bool = false
     var menuBarHidden: Bool = true
-    var menuBarStripIconSize: Int = 24
-    var menuBarStripLabelSize: Int = 9
-    var menuBarStripLayout: MenuBarStripLayout = .grid
+    var menuBarStripIconSize: Int = MenuBarTool.defaultIconSize
+    var menuBarStripLabelSize: Int = MenuBarTool.defaultLabelSize
+    var menuBarStripLayout: MenuBarStripLayout = .list
     /// Master switch. Off means no shortcut is registered and nothing can listen.
     var voiceEnabled: Bool = false
     /// Written by the app while a voice session is live; the CLI only reads it.
@@ -38,7 +38,7 @@ struct ToolState: Codable, Equatable {
     var keyboardBacklightDidForce: Bool = false
     var keyboardBacklightSavedBrightness: Float = 0
     var keyboardBacklightSavedAuto: Bool = false
-    /// External SSH hosts to glance at from the Stats tab.
+    /// External SSH hosts. Each one is a row on Home.
     var remotes: [RemoteServer] = []
 
     init() {}
@@ -59,9 +59,9 @@ struct ToolState: Codable, Equatable {
         scrollHelperPID = try container.decodeIfPresent(Int.self, forKey: .scrollHelperPID) ?? 0
         menuBarHideEnabled = try container.decodeIfPresent(Bool.self, forKey: .menuBarHideEnabled) ?? false
         menuBarHidden = try container.decodeIfPresent(Bool.self, forKey: .menuBarHidden) ?? true
-        menuBarStripIconSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripIconSize) ?? 24
-        menuBarStripLabelSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripLabelSize) ?? 9
-        menuBarStripLayout = try container.decodeIfPresent(MenuBarStripLayout.self, forKey: .menuBarStripLayout) ?? .grid
+        menuBarStripIconSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripIconSize) ?? MenuBarTool.defaultIconSize
+        menuBarStripLabelSize = try container.decodeIfPresent(Int.self, forKey: .menuBarStripLabelSize) ?? MenuBarTool.defaultLabelSize
+        menuBarStripLayout = try container.decodeIfPresent(MenuBarStripLayout.self, forKey: .menuBarStripLayout) ?? .list
         let sizes = MenuBarTool.resolvedSizes(icon: menuBarStripIconSize, label: menuBarStripLabelSize)
         menuBarStripIconSize = sizes.icon
         menuBarStripLabelSize = sizes.label

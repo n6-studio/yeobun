@@ -53,7 +53,6 @@ enum MenuBarIcon {
     private static let gridCell: CGFloat = 8
     private static let gridGap: CGFloat = 2
     private static let logoToGridGap: CGFloat = 4
-    private static let symbolPointSize: CGFloat = 8
 
     static func makeImage(
         mode: MenuBarDisplay,
@@ -228,19 +227,10 @@ enum MenuBarIcon {
     }
 
     private static func drawSymbol(_ tool: ToolID, in rect: CGRect) {
-        let config = NSImage.SymbolConfiguration(pointSize: symbolPointSize, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: [.black]))
-        guard let symbol = NSImage(systemSymbolName: tool.fill, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-        else { return }
-        let size = symbol.size
-        let dest = NSRect(
-            x: rect.midX - size.width / 2 + tool.opticalNudge.width * 0.4,
-            y: rect.midY - size.height / 2 + tool.opticalNudge.height * 0.4,
-            width: size.width,
-            height: size.height
-        )
-        symbol.draw(in: dest, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        ctx.addPath(GlyphLibrary.art(tool.glyph, filled: true).cgPath(in: rect, yDown: false))
+        ctx.setFillColor(gray: 0, alpha: 1)
+        ctx.fillPath(using: .winding)
     }
 
     private static func pdfData() -> Data {

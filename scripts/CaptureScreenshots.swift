@@ -42,12 +42,6 @@ private func captureAll(to out: URL) throws {
     try writePair(name: "home", to: out) { model, presentation in
         presentation.route = .home
         seedHome(model)
-        model.homeTab = .tools
-    }
-    try writePair(name: "stats", to: out) { model, presentation in
-        presentation.route = .home
-        seedHome(model)
-        model.homeTab = .stats
     }
     try writePair(name: "keyboard", to: out) { model, presentation in
         presentation.route = .keyboard
@@ -158,8 +152,9 @@ private func seedHome(_ model: AppModel) {
     model.menuBarHidden = true
     model.menuBarStatus = "Icons stay in the menu bar"
     model.menuBarNotice = nil
-    model.menuBarStripLayout = .grid
+    model.menuBarStripLayout = .list
     model.menuBarStripIconSize = MenuBarTool.defaultIconSize
+    model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize
     model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize
     model.screenRecordingGranted = true
 
@@ -345,7 +340,7 @@ private func render<V: View>(_ view: V, appearance: NSAppearance.Name, to url: U
     hosting.setFrameSize(size)
     window.setContentSize(size)
     hosting.layoutSubtreeIfNeeded()
-    // Home has 4 tiles per tab (last stagger 0.3s + 0.3s). This Mac processes go to index 10.
+    // Home rows stagger at 0.1s. This Mac processes go to index 10.
     RunLoop.current.run(until: Date().addingTimeInterval(1.8))
 
     let bounds = hosting.bounds

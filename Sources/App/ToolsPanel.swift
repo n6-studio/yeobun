@@ -9,14 +9,14 @@ struct ToolsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
+                .animation(reduceMotion ? nil : Motion.enter, value: presentation.isEditingHome)
             screen
                 .id(presentation.route)
                 .transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : Motion.enterOffset)))
         }
         .animation(reduceMotion ? nil : Motion.enter, value: presentation.route)
-        .animation(reduceMotion ? nil : Motion.enter, value: presentation.isEditingHome)
         .padding(Radius.panelPadding)
-        .frame(width: 300)
+        .frame(width: Radius.panelWidth)
         .background(.regularMaterial)
     }
 
@@ -81,7 +81,7 @@ struct ToolsPanel: View {
     private var screen: some View {
         switch presentation.route {
         case .home:
-            HomeGrid()
+            HomeList()
         case .keyboard:
             KeyboardDetail()
         case .scroll:
@@ -110,718 +110,6 @@ struct ToolsPanel: View {
     }
 }
 
-private struct HomeGrid: View {
-    @EnvironmentObject private var model: AppModel
-    @EnvironmentObject private var presentation: PanelPresentation
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var dragging: HomeTool?
-    @State private var dragTranslation: CGSize = .zero
-    @State private var dragStartFrame: CGRect = .zero
-    @State private var gridWidth: CGFloat = 0
-    @State private var lift = false
-    @State private var settling = false
-
-    private let columns = [
-        GridItem(.flexible(), spacing: Radius.grid),
-        GridItem(.flexible(), spacing: Radius.grid)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Radius.grid) {
-            HomeTabBar(selection: $model.homeTab)
-
-            if model.tabVisibleHomeTools.isEmpty {
-                if !presentation.isEditingHome {
-                    Text(model.homeTab.emptyLabel)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 20)
-                }
-            } else {
-                tileGrid
-            }
-
-            if presentation.isEditingHome, !model.tabHiddenHomeTools.isEmpty {
-                Text("Hidden")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 6)
-
-                GroupedPanel {
-                    ForEach(Array(model.tabHiddenHomeTools.enumerated()), id: \.element.id) { index, tool in
-                        if index > 0 {
-                            Divider()
-                        }
-                        HiddenToolRow(tool: tool, title: model.title(for: tool)) {
-                            withAnimation(reduceMotion ? nil : Motion.enter) {
-                                model.showHomeTool(tool)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        .animation(reduceMotion ? nil : Motion.enter, value: presentation.isEditingHome)
-        .onChange(of: presentation.isEditingHome) { _, editing in
-            if !editing {
-                cancelDrag()
-            }
-        }
-        .onChange(of: model.homeTab) { _, _ in
-            cancelDrag()
-        }
-    }
-
-    private var tileGrid: some View {
-        LazyVGrid(columns: columns, spacing: Radius.grid) {
-            ForEach(Array(model.tabVisibleHomeTools.enumerated()), id: \.element.id) { index, tool in
-                visibleCell(tool)
-                    .stagger(index: index, generation: presentation.generation)
-            }
-        }
-        .coordinateSpace(name: "homeGrid")
-        .contentShape(Rectangle())
-        .background {
-            GeometryReader { geo in
-                Color.clear.preference(key: HomeGridWidthKey.self, value: geo.size.width)
-            }
-        }
-        .onPreferenceChange(HomeGridWidthKey.self) { gridWidth = $0 }
-        .overlay(alignment: .topLeading) {
-            if let dragging {
-                tile(for: dragging)
-                    .frame(width: cellSize, height: cellSize)
-                    .scaleEffect(lift && !reduceMotion ? Motion.hoverScale : 1)
-                    .animation(reduceMotion ? nil : Motion.press, value: lift)
-                    .offset(
-                        x: dragStartFrame.minX + dragTranslation.width,
-                        y: dragStartFrame.minY + dragTranslation.height
-                    )
-                    .animation(settling && !reduceMotion ? Motion.press : nil, value: dragTranslation)
-                    .allowsHitTesting(false)
-            }
-        }
-    }
-
-    private func visibleCell(_ tool: HomeTool) -> some View {
-        ZStack(alignment: .topTrailing) {
-            if dragging == tool {
-                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                    .fill(ModuleColor.offFill)
-                    .aspectRatio(1, contentMode: .fit)
-            } else {
-                tile(for: tool)
-                    .allowsHitTesting(!presentation.isEditingHome)
-            }
-
-            if presentation.isEditingHome {
-                Color.clear
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-                    .gesture(cellDrag(for: tool))
-                    .help("Drag to reorder")
-            }
-
-            if presentation.isEditingHome, dragging != tool {
-                VisibilityBadge(
-                    symbol: "minus.circle.fill",
-                    tint: .red,
-                    label: "Hide \(model.title(for: tool))"
-                ) {
-                    cancelDrag()
-                    withAnimation(reduceMotion ? nil : Motion.enter) {
-                        model.hideHomeTool(tool)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func tile(for tool: HomeItem) -> some View {
-        switch tool {
-        case .tool(.keyboard):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.keyboardLocked ? "On" : "Off",
-                isOn: model.keyboardLocked,
-                isBusy: model.keyboardBusy,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                opticalNudge: tool.opticalNudge,
-                onToggle: { model.toggleKeyboard() },
-                action: { presentation.open(.keyboard) }
-            )
-        case .tool(.scroll):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.scrollReverseEnabled ? "On" : "Off",
-                isOn: model.scrollReverseEnabled,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                onToggle: { model.toggleScrollReverse() },
-                action: { presentation.open(.scroll) }
-            )
-        case .tool(.lid):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.lidSleepDisabled ? "On" : "Off",
-                isOn: model.lidSleepDisabled,
-                isBusy: model.lidBusy,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                onToggle: { model.toggleLidSleep() },
-                action: { presentation.open(.lid) }
-            )
-        case .tool(.awake):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.awakeTileStatus,
-                isOn: model.awakeActive,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                onToggle: { model.toggleAwake() },
-                action: { presentation.open(.awake) }
-            )
-        case .tool(.menuBar):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.menuBarTileStatus,
-                isOn: model.menuBarHideEnabled,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                onToggle: { model.toggleMenuBarHide() },
-                action: { presentation.open(.menuBar) }
-            )
-        case .tool(.voice):
-            ToolTile(
-                title: model.title(for: tool),
-                status: model.voiceTileStatus,
-                isOn: model.voiceEnabled,
-                isBusy: model.voiceBusy,
-                outline: tool.outline,
-                fill: tool.fill,
-                accent: tool.accent,
-                onToggle: { model.toggleVoiceEnabled() },
-                action: { presentation.open(.voice) }
-            )
-        case .tool(.machine):
-            InfoStatsTile(
-                title: model.title(for: tool),
-                outline: tool.outline,
-                fill: tool.fill,
-                route: .machine,
-                lines: [
-                    InfoMetric(label: "CPU", value: model.cpuPercentLabel, level: model.cpuUsageLevel),
-                    InfoMetric(label: "RAM", value: model.ramShortLabel, level: model.ramUsageLevel)
-                ] + powerMetric(model.powerLabel),
-                accessibilityValue: accessibilityCPURam(cpu: model.cpuPercentLabel, ram: model.ramShortLabel, power: model.powerLabel)
-            )
-        case .tool(.battery):
-            InfoStatsTile(
-                title: model.title(for: tool),
-                outline: tool.outline,
-                fill: tool.fill,
-                route: .battery,
-                lines: [
-                    InfoMetric(label: "Charge", value: model.batteryPercentLabel, level: model.batteryUsageLevel),
-                    InfoMetric(label: "Status", value: compactBatteryStatus, level: .normal)
-                ],
-                accessibilityValue: "\(model.batteryPercentLabel), \(model.batteryStatusLabel)"
-            )
-        case .tool(.network):
-            InfoStatsTile(
-                title: model.title(for: tool),
-                outline: tool.outline,
-                fill: tool.fill,
-                route: .network,
-                lines: [
-                    InfoMetric(label: "Rate", value: model.networkPrimaryLabel, level: .normal),
-                    InfoMetric(label: "Link", value: model.networkSecondaryLabel, level: .normal)
-                ],
-                accessibilityValue: "\(model.networkPrimaryLabel), \(model.networkSecondaryLabel)"
-            )
-        case .tool(.storage):
-            InfoStatsTile(
-                title: model.title(for: tool),
-                outline: tool.outline,
-                fill: tool.fill,
-                route: .storage,
-                lines: [
-                    InfoMetric(label: "Free", value: model.diskFreeLabel, level: model.diskUsageLevel),
-                    InfoMetric(label: "Used", value: model.diskUsedLabel, level: model.diskUsageLevel)
-                ],
-                accessibilityValue: "\(model.diskFreeLabel) free, \(model.diskUsedLabel) used"
-            )
-        case .remote(let id):
-            InfoStatsTile(
-                title: model.title(for: tool),
-                outline: tool.outline,
-                fill: tool.fill,
-                route: .remote(id),
-                lines: [
-                    InfoMetric(label: "CPU", value: model.remoteCPULabel(id), level: model.remoteCPULevel(id)),
-                    InfoMetric(label: "RAM", value: model.remoteRAMLabel(id), level: model.remoteRAMLevel(id))
-                ] + powerMetric(model.remotePowerLabel(id)),
-                accessibilityValue: accessibilityCPURam(
-                    cpu: model.remoteCPULabel(id),
-                    ram: model.remoteRAMLabel(id),
-                    power: model.remotePowerLabel(id)
-                )
-            )
-        }
-    }
-
-    private var compactBatteryStatus: String {
-        guard let battery = model.stats.battery else { return "No battery" }
-        if battery.isFull { return "Full" }
-        if battery.isCharging { return "Charging" }
-        if let minutes = battery.minutesToEmpty {
-            return StatsFormat.durationMinutes(minutes)
-        }
-        return battery.isPluggedIn ? "Plugged in" : "On battery"
-    }
-
-    private func powerMetric(_ value: String?) -> [InfoMetric] {
-        guard let value else { return [] }
-        return [InfoMetric(label: "Power", value: value, level: .normal)]
-    }
-
-    private func accessibilityCPURam(cpu: String, ram: String, power: String?) -> String {
-        if let power {
-            return "CPU \(cpu), RAM \(ram), Power \(power)"
-        }
-        return "CPU \(cpu), RAM \(ram)"
-    }
-
-    private func cellDrag(for tool: HomeTool) -> some Gesture {
-        DragGesture(minimumDistance: 4, coordinateSpace: .named("homeGrid"))
-            .onChanged { value in
-                handleDragChanged(value, tool: tool)
-            }
-            .onEnded { _ in
-                if dragging == tool {
-                    handleDragEnded()
-                }
-            }
-    }
-
-    private func handleDragChanged(_ value: DragGesture.Value, tool: HomeTool) {
-        guard presentation.isEditingHome, !settling else { return }
-
-        if dragging == nil {
-            dragging = tool
-            if let index = model.tabVisibleHomeTools.firstIndex(of: tool) {
-                dragStartFrame = slotFrame(index: index)
-            }
-            var snap = Transaction()
-            snap.disablesAnimations = true
-            withTransaction(snap) {
-                dragTranslation = value.translation
-            }
-            withAnimation(reduceMotion ? nil : Motion.press) {
-                lift = true
-            }
-            return
-        }
-
-        guard dragging == tool else { return }
-
-        var follow = Transaction()
-        follow.disablesAnimations = true
-        withTransaction(follow) {
-            dragTranslation = value.translation
-        }
-        guard let current = model.tabVisibleHomeTools.firstIndex(of: tool) else { return }
-        let center = CGPoint(
-            x: dragStartFrame.midX + value.translation.width,
-            y: dragStartFrame.midY + value.translation.height
-        )
-        let target = slotIndex(at: center, current: current)
-        guard current != target else { return }
-        withAnimation(reduceMotion ? nil : Motion.press) {
-            model.moveVisibleHomeTool(tool, to: target)
-        }
-    }
-
-    private func handleDragEnded() {
-        guard let tool = dragging else { return }
-        settling = true
-        let destination: CGRect = {
-            if let index = model.tabVisibleHomeTools.firstIndex(of: tool) {
-                return slotFrame(index: index)
-            }
-            return dragStartFrame
-        }()
-        let translation = CGSize(
-            width: destination.minX - dragStartFrame.minX,
-            height: destination.minY - dragStartFrame.minY
-        )
-        withAnimation(reduceMotion ? nil : Motion.press) {
-            dragTranslation = translation
-            lift = false
-        } completion: {
-            cancelDrag()
-        }
-    }
-
-    private func cancelDrag() {
-        dragging = nil
-        dragTranslation = .zero
-        dragStartFrame = .zero
-        lift = false
-        settling = false
-    }
-
-    private var cellSize: CGFloat {
-        let width = gridWidth > 0 ? gridWidth : 272
-        return (width - Radius.grid) / 2
-    }
-
-    private func slotFrame(index: Int) -> CGRect {
-        let cell = cellSize
-        let gap = Radius.grid
-        let col = CGFloat(index % 2)
-        let row = CGFloat(index / 2)
-        return CGRect(
-            x: col * (cell + gap),
-            y: row * (cell + gap),
-            width: cell,
-            height: cell
-        )
-    }
-
-    private func slotIndex(at point: CGPoint, current: Int) -> Int {
-        let count = model.tabVisibleHomeTools.count
-        guard count > 0 else { return 0 }
-        let cell = cellSize
-        let gap = Radius.grid
-        let stride = cell + gap
-        guard stride > 0 else { return 0 }
-        let col = point.x < cell + gap / 2 ? 0 : 1
-        let row = Int(floor(max(0, point.y) / stride))
-        let proposed = min(count - 1, max(0, row * 2 + col))
-        if proposed == current { return current }
-        let inset = cell * 0.2
-        guard slotFrame(index: proposed).insetBy(dx: inset, dy: inset).contains(point) else {
-            return current
-        }
-        return proposed
-    }
-}
-
-private struct HomeTabBar: View {
-    @Binding var selection: HomeTab
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pillProgress: CGFloat = 0
-
-    private let spacing: CGFloat = 3
-    private let inset: CGFloat = 3
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(ModuleColor.groupFill)
-            HomeTabPill(progress: pillProgress, spacing: spacing, inset: inset)
-            HStack(spacing: spacing) {
-                ForEach(HomeTab.allCases) { tab in
-                    let selected = selection == tab
-                    Button {
-                        var snap = Transaction()
-                        snap.disablesAnimations = true
-                        withTransaction(snap) {
-                            selection = tab
-                        }
-                    } label: {
-                        Text(tab.title)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(selected ? Color.primary : Color.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .frame(maxWidth: .infinity)
-                    .accessibilityLabel(tab.title)
-                    .accessibilityAddTraits(selected ? [.isSelected] : [])
-                }
-            }
-            .padding(inset)
-        }
-        .frame(height: 32)
-        .onAppear {
-            pillProgress = progress(for: selection)
-        }
-        .onChange(of: selection) { _, tab in
-            withAnimation(reduceMotion ? nil : Motion.press) {
-                pillProgress = progress(for: tab)
-            }
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Home")
-    }
-
-    private func progress(for tab: HomeTab) -> CGFloat {
-        CGFloat(HomeTab.allCases.firstIndex(of: tab) ?? 0)
-    }
-}
-
-/// Draws the selected-tab pill. `progress` is the only animatable value, so it
-/// can only move horizontally even when the panel height changes.
-private struct HomeTabPill: View, Animatable {
-    var progress: CGFloat
-    var spacing: CGFloat
-    var inset: CGFloat
-
-    var animatableData: CGFloat {
-        get { progress }
-        set { progress = newValue }
-    }
-
-    var body: some View {
-        Canvas { context, size in
-            let tabs = CGFloat(HomeTab.allCases.count)
-            let innerWidth = size.width - inset * 2
-            let innerHeight = size.height - inset * 2
-            let width = (innerWidth - spacing * (tabs - 1)) / max(tabs, 1)
-            let x = inset + progress * (width + spacing)
-            let rect = CGRect(x: x, y: inset, width: width, height: innerHeight)
-            context.fill(
-                Path(roundedRect: rect, cornerRadius: 10),
-                with: .color(ModuleColor.glyphOffFill)
-            )
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-private struct HomeGridWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-private struct VisibilityBadge: View {
-    let symbol: String
-    let tint: Color
-    let label: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(.white, tint)
-                .font(.system(size: 16, weight: .semibold))
-                .padding(6)
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(label)
-    }
-}
-
-private struct HiddenToolRow: View {
-    let tool: HomeItem
-    let title: String
-    let onShow: () -> Void
-
-    var body: some View {
-        Button(action: onShow) {
-            HStack(spacing: 10) {
-                Image(systemName: tool.outline)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .frame(width: Radius.chrome, height: Radius.chrome)
-                    .background(ModuleColor.offFill, in: Circle())
-                    .accessibilityHidden(true)
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 8)
-                Image(systemName: "plus.circle.fill")
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Color.green)
-                    .font(.system(size: 16, weight: .semibold))
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel("Show \(title)")
-    }
-}
-
-private struct ToolTile: View {
-    let title: String
-    let status: String
-    let isOn: Bool
-    var isBusy: Bool = false
-    let outline: String
-    let fill: String
-    let accent: Color
-    var opticalNudge: CGSize = .zero
-    let onToggle: () -> Void
-    let action: () -> Void
-
-    @State private var ignoreOpen = false
-    @State private var cardHovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            Button(action: openDetail) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Color.clear
-                        .frame(width: Radius.glyph, height: Radius.glyph)
-                    Spacer(minLength: 6)
-                    Text(title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(2)
-                    Group {
-                        if isBusy {
-                            ProgressView()
-                                .controlSize(.mini)
-                                .tint(isOn ? .white : .secondary)
-                                .padding(.top, 3)
-                        } else {
-                            Text(status)
-                                .font(.system(size: 11, weight: .regular))
-                                .monospacedDigit()
-                                .opacity(0.8)
-                                .padding(.top, 1)
-                        }
-                    }
-                }
-                .foregroundStyle(isOn ? .white : .primary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .aspectRatio(1, contentMode: .fit)
-                .padding(Radius.tilePadding)
-                .background(
-                    TileBackdrop(isOn: isOn, hovering: cardHovering, accent: accent)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-            }
-            .buttonStyle(PressScaleButtonStyle())
-            .onHover { cardHovering = $0 }
-            .animation(reduceMotion ? nil : Motion.hover, value: cardHovering)
-            .help("Show \(title) options")
-            .accessibilityLabel(title)
-            .accessibilityValue(isBusy ? "Working, \(status)" : status)
-            .accessibilityHint("Shows options")
-
-            Button(action: toggleNow) {
-                GlyphCircle(
-                    outline: outline,
-                    fill: fill,
-                    isOn: isOn,
-                    opticalNudge: opticalNudge
-                )
-            }
-            .buttonStyle(PressScaleButtonStyle())
-            .contentShape(Circle())
-            .disabled(isBusy)
-            .opacity(isBusy ? 0.45 : 1)
-            .padding(Radius.tilePadding)
-            .zIndex(1)
-            .help(isOn ? "Turn \(title) off" : "Turn \(title) on")
-            .accessibilityLabel(title)
-            .accessibilityValue(isBusy ? "Working, \(status)" : status)
-            .accessibilityHint(isOn ? "Turns off" : "Turns on")
-        }
-        .animation(Motion.enter, value: isOn)
-    }
-
-    private func toggleNow() {
-        ignoreOpen = true
-        onToggle()
-        DispatchQueue.main.async {
-            ignoreOpen = false
-        }
-    }
-
-    private func openDetail() {
-        guard !ignoreOpen else { return }
-        action()
-    }
-}
-
-private struct InfoMetric {
-    var label: String
-    var value: String
-    var level: UsageLevel
-}
-
-private struct InfoStatsTile: View {
-    @EnvironmentObject private var presentation: PanelPresentation
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
-
-    let title: String
-    let outline: String
-    let fill: String
-    let route: PanelRoute
-    let lines: [InfoMetric]
-    let accessibilityValue: String
-
-    var body: some View {
-        Button {
-            presentation.open(route)
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                GlyphCircle(
-                    outline: outline,
-                    fill: fill,
-                    isOn: false
-                )
-                Spacer(minLength: 6)
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                VStack(alignment: .leading, spacing: 1) {
-                    ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                        metric(label: line.label, value: line.value, level: line.level)
-                    }
-                }
-                .padding(.top, 3)
-            }
-            .foregroundStyle(.primary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .aspectRatio(1, contentMode: .fit)
-            .padding(Radius.tilePadding)
-            .background(
-                TileBackdrop(isOn: false, hovering: hovering)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
-        }
-        .buttonStyle(PressScaleButtonStyle())
-        .onHover { hovering = $0 }
-        .animation(reduceMotion ? nil : Motion.hover, value: hovering)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
-        .accessibilityValue(accessibilityValue)
-    }
-
-    private func metric(label: String, value: String, level: UsageLevel) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 11, weight: .regular).monospacedDigit())
-                .foregroundStyle(level.tint ?? Color.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .animation(Motion.press, value: level)
-        }
-    }
-}
-
 private struct KeyboardDetail: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
@@ -829,12 +117,7 @@ private struct KeyboardDetail: View {
     var body: some View {
         GroupedPanel {
             HStack(alignment: .center, spacing: 10) {
-                StateSymbol(
-                    outline: "lock",
-                    fill: "lock.fill",
-                    isActive: model.keyboardLocked,
-                    opticalNudge: CGSize(width: 0.5, height: 0)
-                )
+                StateSymbol(glyph: ToolID.keyboard.glyph, isActive: model.keyboardLocked)
                 .foregroundStyle(model.keyboardLocked ? ModuleColor.keyboard : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -930,11 +213,7 @@ private struct ScrollDetail: View {
     var body: some View {
         GroupedPanel {
             HStack(alignment: .center, spacing: 10) {
-                StateSymbol(
-                    outline: "computermouse",
-                    fill: "computermouse.fill",
-                    isActive: model.scrollReverseEnabled
-                )
+                StateSymbol(glyph: ToolID.scroll.glyph, isActive: model.scrollReverseEnabled)
                 .foregroundStyle(model.scrollReverseEnabled ? ModuleColor.scroll : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -1003,11 +282,7 @@ private struct LidDetail: View {
     var body: some View {
         GroupedPanel {
             HStack(alignment: .center, spacing: 10) {
-                StateSymbol(
-                    outline: "moon.zzz",
-                    fill: "moon.zzz.fill",
-                    isActive: model.lidSleepDisabled
-                )
+                StateSymbol(glyph: ToolID.lid.glyph, isActive: model.lidSleepDisabled)
                 .foregroundStyle(model.lidSleepDisabled ? ModuleColor.lid : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -1058,11 +333,7 @@ private struct AwakeDetail: View {
     var body: some View {
         GroupedPanel {
             HStack(alignment: .center, spacing: 10) {
-                StateSymbol(
-                    outline: "cup.and.saucer",
-                    fill: "cup.and.saucer.fill",
-                    isActive: model.awakeActive
-                )
+                StateSymbol(glyph: ToolID.awake.glyph, isActive: model.awakeActive)
                 .foregroundStyle(model.awakeActive ? ModuleColor.awake : .primary)
 
                 VStack(alignment: .leading, spacing: 1) {
@@ -1089,20 +360,8 @@ private struct AwakeDetail: View {
 
             Divider()
 
-            HStack {
-                Text("Duration")
-                    .font(.system(size: 13))
-                Spacer()
-                Picker("Duration", selection: $model.awakeMinutes) {
-                    ForEach(model.awakeDurationChoices, id: \.self) { minutes in
-                        Text(AppModel.awakeDurationLabel(minutes)).tag(minutes)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .controlSize(.small)
-            }
-            .stagger(index: 1, generation: presentation.generation)
+            AwakeDurationChips(minutes: $model.awakeMinutes, choices: model.awakeDurationChoices)
+                .stagger(index: 1, generation: presentation.generation)
 
             if let error = model.awakeError {
                 Text(error)
@@ -1122,11 +381,7 @@ private struct MenuBarDetail: View {
         VStack(alignment: .leading, spacing: 10) {
             GroupedPanel {
                 HStack(alignment: .center, spacing: 10) {
-                    StateSymbol(
-                        outline: ToolID.menuBar.outline,
-                        fill: ToolID.menuBar.fill,
-                        isActive: model.menuBarHideEnabled
-                    )
+                    StateSymbol(glyph: ToolID.menuBar.glyph, isActive: model.menuBarHideEnabled)
                     .foregroundStyle(model.menuBarHideEnabled ? ModuleColor.menuBar : .primary)
 
                     VStack(alignment: .leading, spacing: 1) {
@@ -1267,16 +522,22 @@ private struct VoiceDetail: View {
         VStack(alignment: .leading, spacing: 10) {
             GroupedPanel {
                 HStack(alignment: .center, spacing: 10) {
-                    StateSymbol(
-                        outline: "mic",
-                        fill: "mic.fill",
-                        isActive: model.voiceEnabled
-                    )
+                    StateSymbol(glyph: ToolID.voice.glyph, isActive: model.voiceEnabled)
                     .foregroundStyle(model.voiceEnabled ? ModuleColor.voice : .primary)
 
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(ToolID.voice.title)
-                            .font(.system(size: 13, weight: .semibold))
+                        HStack(spacing: 6) {
+                            Text(ToolID.voice.title)
+                                .font(.system(size: 13, weight: .semibold))
+                            if model.voiceListening {
+                                Text("Listening")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundStyle(ModuleColor.voice)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(ModuleColor.voice.opacity(0.16), in: Capsule())
+                            }
+                        }
                         Text(model.voiceStatus)
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
@@ -1343,6 +604,10 @@ private struct VoiceDetail: View {
                 }
 
                 Divider()
+
+                if model.voiceListening {
+                    ListeningBars(active: true)
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -1556,7 +821,8 @@ private struct MachineDetail: View {
                     label: "CPU",
                     value: model.cpuPercentLabel,
                     fraction: model.stats.cpuReady ? model.stats.cpuFraction : 0,
-                    level: model.cpuUsageLevel
+                    level: model.cpuUsageLevel,
+                    pin: HomePin(source: .mac, metric: .cpu)
                 )
                 .stagger(index: 0, generation: presentation.generation)
 
@@ -1569,14 +835,17 @@ private struct MachineDetail: View {
                     label: "Memory",
                     value: model.ramShortLabel,
                     fraction: model.ramFraction,
-                    level: model.ramUsageLevel
+                    level: model.ramUsageLevel,
+                    pin: HomePin(source: .mac, metric: .memory)
                 )
                 .stagger(index: 2, generation: presentation.generation)
 
-                if let power = model.powerLabel {
-                    StatRow(label: "Power", value: power)
-                        .stagger(index: 3, generation: presentation.generation)
-                }
+                StatRow(
+                    label: "Power",
+                    value: model.powerLabel ?? "—",
+                    pin: HomePin(source: .mac, metric: .power)
+                )
+                .stagger(index: 3, generation: presentation.generation)
 
                 StatRow(label: "Pressure", value: model.stats.memoryPressure.label, level: model.memoryPressureLevel)
                     .stagger(index: 4, generation: presentation.generation)
@@ -1595,6 +864,12 @@ private struct MachineDetail: View {
                 StatRow(label: "Uptime", value: StatsFormat.uptime(model.stats.uptimeSeconds))
                     .stagger(index: 6, generation: presentation.generation)
             }
+
+            StorageOnMac()
+
+            BatteryDetail()
+
+            NetworkDetail()
 
             if !model.stats.topProcesses.isEmpty {
                 GroupedPanel {
@@ -1615,6 +890,7 @@ private struct RemoteDetail: View {
     let id: UUID
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
+    @State private var powerHelp = false
 
     private var sample: RemoteSample { model.remoteSample(id) }
     private var server: RemoteServer? { model.remote(for: id) }
@@ -1622,12 +898,29 @@ private struct RemoteDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             GroupedPanel {
+                if let server {
+                    HStack {
+                        RemoteIconMenu(server: server)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(server.name)
+                                .font(.system(size: 13, weight: .semibold))
+                            Text(server.subtitle)
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .stagger(index: 0, generation: presentation.generation)
+                    Divider()
+                }
                 if sample.status == .ok {
                     MeterRow(
                         label: "CPU",
                         value: model.remoteCPULabel(id),
                         fraction: sample.cpuReady ? sample.cpuFraction : 0,
-                        level: model.remoteCPULevel(id)
+                        level: model.remoteCPULevel(id),
+                        pin: HomePin(source: .remote(id), metric: .cpu)
                     )
                     .stagger(index: 0, generation: presentation.generation)
 
@@ -1640,24 +933,46 @@ private struct RemoteDetail: View {
                         label: "Memory",
                         value: model.remoteRAMLabel(id),
                         fraction: sample.ramFraction,
-                        level: model.remoteRAMLevel(id)
+                        level: model.remoteRAMLevel(id),
+                        pin: HomePin(source: .remote(id), metric: .memory)
                     )
                     .stagger(index: 2, generation: presentation.generation)
 
-                    if let power = model.remotePowerLabel(id) {
-                        StatRow(label: "Power", value: power)
-                            .stagger(index: 3, generation: presentation.generation)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text("Power")
+                            .font(.system(size: 12, weight: .semibold))
+                        PinMark(pin: HomePin(source: .remote(id), metric: .power))
+                        if let note = model.remotePowerNote(id) {
+                            Button {
+                                powerHelp = true
+                            } label: {
+                                Image(systemName: "info.circle")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("How to read power")
+                            .popover(isPresented: $powerHelp, arrowEdge: .bottom) {
+                                RemotePowerHelp(note: note)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Text(model.remotePowerLabel(id) ?? "—")
+                            .font(.system(size: 12, weight: .regular).monospacedDigit())
+                            .foregroundStyle(.secondary)
                     }
+                    .stagger(index: 3, generation: presentation.generation)
 
-                    if sample.diskTotal > 0 {
-                        MeterRow(
-                            label: "Disk",
-                            value: "\(StatsFormat.gigabytes(sample.diskTotal - sample.diskUsed)) free",
-                            fraction: sample.diskFraction,
-                            level: model.remoteDiskLevel(id)
-                        )
-                        .stagger(index: 3, generation: presentation.generation)
-                    }
+                    MeterRow(
+                        label: "Disk",
+                        value: sample.diskTotal > 0
+                            ? "\(StatsFormat.gigabytes(sample.diskTotal - sample.diskUsed)) free"
+                            : "—",
+                        fraction: sample.diskFraction,
+                        level: model.remoteDiskLevel(id),
+                        pin: HomePin(source: .remote(id), metric: .storage)
+                    )
+                    .stagger(index: 3, generation: presentation.generation)
 
                     if let load = loadLabel {
                         StatRow(label: "Load", value: load)
@@ -1728,6 +1043,38 @@ private struct RemoteDetail: View {
     }
 }
 
+private struct RemotePowerHelp: View {
+    let note: AppModel.RemotePowerNote
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(note.message)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let command = note.untilReboot {
+                commandBlock("Until reboot", command)
+            }
+            if let command = note.keep {
+                commandBlock("After restart", command)
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+    }
+
+    private func commandBlock(_ title: String, _ command: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+            Text(command)
+                .font(.system(size: 11, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 private struct BatteryDetail: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
@@ -1740,7 +1087,8 @@ private struct BatteryDetail: View {
                         label: "Charge",
                         value: model.batteryPercentLabel,
                         fraction: battery.percent,
-                        level: model.batteryUsageLevel
+                        level: model.batteryUsageLevel,
+                        pin: HomePin(source: .mac, metric: .battery)
                     )
                     .stagger(index: 0, generation: presentation.generation)
 
@@ -1806,20 +1154,68 @@ private struct NetworkDetail: View {
             }
 
             StatRow(
+                label: "Both",
+                value: model.networkBothLabel,
+                pin: HomePin(source: .mac, metric: .network)
+            )
+            .stagger(index: 3, generation: presentation.generation)
+
+            StatRow(
                 label: "Down",
                 value: model.stats.network.ratesReady
                     ? StatsFormat.rate(model.stats.network.bytesInPerSecond, compact: false)
-                    : "…"
+                    : "…",
+                pin: HomePin(source: .mac, metric: .down)
             )
-            .stagger(index: 3, generation: presentation.generation)
+            .stagger(index: 4, generation: presentation.generation)
 
             StatRow(
                 label: "Up",
                 value: model.stats.network.ratesReady
                     ? StatsFormat.rate(model.stats.network.bytesOutPerSecond, compact: false)
-                    : "…"
+                    : "…",
+                pin: HomePin(source: .mac, metric: .up)
             )
-            .stagger(index: 4, generation: presentation.generation)
+            .stagger(index: 5, generation: presentation.generation)
+        }
+    }
+}
+
+private struct StorageOnMac: View {
+    @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var presentation: PanelPresentation
+
+    var body: some View {
+        let volumes = model.stats.volumes.isEmpty
+            ? model.stats.bootVolume.map { [$0] } ?? []
+            : model.stats.volumes
+        GroupedPanel {
+            HStack {
+                Text("Storage")
+                    .font(.system(size: 12, weight: .semibold))
+                PinMark(pin: HomePin(source: .mac, metric: .storage))
+                Spacer(minLength: 8)
+                Text(model.diskUsedLabel)
+                    .font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(model.diskUsageLevel.tint ?? Color.secondary)
+            }
+            .stagger(index: 0, generation: presentation.generation)
+
+            if volumes.isEmpty {
+                Text("No disks mounted")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(volumes.enumerated()), id: \.element.id) { index, volume in
+                    MeterRow(
+                        label: volume.name,
+                        value: "\(StatsFormat.gigabytes(volume.free)) free",
+                        fraction: volume.usedFraction,
+                        level: UsageLevel(fraction: volume.usedFraction)
+                    )
+                    .stagger(index: index + 1, generation: presentation.generation)
+                }
+            }
         }
     }
 }
@@ -1861,6 +1257,7 @@ private struct SettingsDetail: View {
     @State private var remoteUser = ""
     @State private var remotePort = ""
     @State private var remoteIdentity = ""
+    @State private var editingRemoteID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1914,7 +1311,7 @@ private struct SettingsDetail: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Menu bar stats")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Show a labeled stat next to the logo")
+                        Text("One stat beside the logo. Home shows the glance.")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -1944,12 +1341,18 @@ private struct SettingsDetail: View {
                     remoteField("Identity file, optional", text: $remoteIdentity)
                     HStack {
                         Spacer(minLength: 0)
-                        Button("Add") {
-                            addRemote()
+                        if editingRemoteID != nil {
+                            Button("Cancel") {
+                                clearRemoteForm()
+                            }
+                            .controlSize(.small)
+                        }
+                        Button(editingRemoteID == nil ? "Add" : "Save") {
+                            commitRemote()
                         }
                         .controlSize(.small)
                         .disabled(remoteHost.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .accessibilityLabel("Add remote server")
+                        .accessibilityLabel(editingRemoteID == nil ? "Add remote server" : "Save remote server")
                     }
                     if let notice = model.remoteAddNotice {
                         Text(notice)
@@ -2086,12 +1489,13 @@ private struct SettingsDetail: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(ModuleColor.offFill)
             )
-            .onSubmit { addRemote() }
+            .onSubmit { commitRemote() }
     }
 
     private func remoteRow(_ server: RemoteServer) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
+                RemoteIconMenu(server: server)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(server.name)
                         .font(.system(size: 12, weight: .medium))
@@ -2101,6 +1505,11 @@ private struct SettingsDetail: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
+                Button("Edit") {
+                    beginEditing(server)
+                }
+                .controlSize(.small)
+                .accessibilityLabel("Edit \(server.name)")
                 if model.remoteTestingID == server.id {
                     ProgressView()
                         .controlSize(.mini)
@@ -2130,17 +1539,18 @@ private struct SettingsDetail: View {
         }
     }
 
-    private func addRemote() {
-        if let error = model.addRemote(
-            name: remoteName,
-            host: remoteHost,
-            user: remoteUser,
-            port: remotePort,
-            identity: remoteIdentity
-        ) {
-            model.remoteAddNotice = error
-            return
-        }
+    private func beginEditing(_ server: RemoteServer) {
+        editingRemoteID = server.id
+        remoteName = server.name
+        remoteHost = server.host
+        remoteUser = server.user ?? ""
+        remotePort = server.port.map(String.init) ?? ""
+        remoteIdentity = server.identityPath ?? ""
+        model.remoteAddNotice = nil
+    }
+
+    private func clearRemoteForm() {
+        editingRemoteID = nil
         remoteName = ""
         remoteHost = ""
         remoteUser = ""
@@ -2148,9 +1558,40 @@ private struct SettingsDetail: View {
         remoteIdentity = ""
         model.remoteAddNotice = nil
     }
+
+    private func commitRemote() {
+        let error: String?
+        if let id = editingRemoteID {
+            error = model.updateRemote(
+                id: id,
+                name: remoteName,
+                host: remoteHost,
+                user: remoteUser,
+                port: remotePort,
+                identity: remoteIdentity
+            )
+        } else {
+            error = model.addRemote(
+                name: remoteName,
+                host: remoteHost,
+                user: remoteUser,
+                port: remotePort,
+                identity: remoteIdentity
+            )
+        }
+        if let error {
+            model.remoteAddNotice = error
+            return
+        }
+        clearRemoteForm()
+    }
+
+    private func addRemote() {
+        commitRemote()
+    }
 }
 
-private struct GroupedPanel<Content: View>: View {
+struct GroupedPanel<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
@@ -2193,6 +1634,7 @@ private struct MeterRow: View {
     let value: String
     let fraction: Double
     var level: UsageLevel? = nil
+    var pin: HomePin? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -2204,6 +1646,9 @@ private struct MeterRow: View {
                 Text(label)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
+                if let pin {
+                    PinMark(pin: pin)
+                }
                 Spacer()
                 Text(value)
                     .font(.system(size: 12, weight: .regular).monospacedDigit())
@@ -2228,12 +1673,16 @@ private struct StatRow: View {
     let label: String
     let value: String
     var level: UsageLevel = .normal
+    var pin: HomePin? = nil
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
                 .lineLimit(1)
+            if let pin {
+                PinMark(pin: pin)
+            }
             Spacer(minLength: 8)
             Text(value)
                 .font(.system(size: 12, weight: .regular).monospacedDigit())
@@ -2241,6 +1690,53 @@ private struct StatRow: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
+    }
+}
+
+private struct PinMark: View {
+    let pin: HomePin
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Button {
+            model.togglePin(pin)
+        } label: {
+            Image(systemName: model.isPinned(pin) ? "pin.fill" : "pin")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(model.isPinned(pin) ? Color.accentColor : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(model.isPinned(pin) ? "Unpin \(pin.metric.title)" : "Pin \(pin.metric.title)")
+    }
+}
+
+private struct RemoteIconMenu: View {
+    let server: RemoteServer
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        Menu {
+            ForEach(RemoteSymbol.choices, id: \.self) { symbol in
+                let glyph = GlyphID(remoteSymbol: symbol)
+                Button {
+                    model.setRemoteSymbol(server.id, symbol)
+                } label: {
+                    Image(nsImage: GlyphIconImage.template(glyph))
+                        .frame(width: GlyphSlot.row, height: GlyphSlot.row)
+                }
+                .accessibilityLabel(glyph.rawValue)
+            }
+        } label: {
+            Image(nsImage: GlyphIconImage.template(GlyphID(remoteSymbol: server.symbol)))
+                .renderingMode(.template)
+                .foregroundStyle(.primary)
+                .frame(width: GlyphSlot.row, height: GlyphSlot.row)
+                .frame(width: 28, height: 28)
+                .background(ModuleColor.offFill, in: Circle())
+        }
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Icon for \(server.name)")
     }
 }
 

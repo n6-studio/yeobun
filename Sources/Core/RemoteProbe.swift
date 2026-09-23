@@ -207,6 +207,9 @@ enum RemoteProbe {
         sample.diskUsed = current.diskUsed
         sample.topProcesses = current.processes
         sample.powerWatts = powerWatts(current: current, previous: previous)
+        if sample.powerWatts == nil, !current.powerHint.isEmpty {
+            sample.powerHint = current.powerHint
+        }
 
         if let previous, previous.cpuTotal > 0, current.cpuTotal > previous.cpuTotal {
             let idleDelta = current.cpuIdle &- previous.cpuIdle
@@ -423,6 +426,20 @@ if [ "$power_uw" != 0 ]
 then
   printf "power_uw=%s\n" "$power_uw"
 fi
+if [ "$energy_ok" != 1 ] && [ "$power_uw" = 0 ]
+then
+  hint=none
+  for path in /sys/class/powercap/intel-rapl:*
+  do
+    [ -e "$path/energy_uj" ] || continue
+    if [ ! -r "$path/energy_uj" ]
+    then
+      hint=chmod
+      break
+    fi
+  done
+  printf "power_hint=%s\n" "$hint"
+fi
 df -Pk / 2>/dev/null | {
   read header
   read fs blocks used avail cap mount
@@ -469,6 +486,7 @@ struct RemoteRaw {
     var energyUj: UInt64 = 0
     var energyMaxUj: UInt64 = 0
     var powerMicrowatts: UInt64 = 0
+    var powerHint = ""
     var processes: [ProcessUsage] = []
 
     static func parse(_ text: String) -> RemoteRaw {
@@ -504,6 +522,7 @@ struct RemoteRaw {
             case "energy_uj": raw.energyUj = UInt64(value) ?? 0
             case "energy_max_uj": raw.energyMaxUj = UInt64(value) ?? 0
             case "power_uw": raw.powerMicrowatts = UInt64(value) ?? 0
+            case "power_hint": raw.powerHint = value
             default: break
             }
         }

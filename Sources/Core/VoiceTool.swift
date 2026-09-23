@@ -135,7 +135,7 @@ final class VoiceTool: ToggleTool {
             }
         }
         if enabled {
-            throw ToolError.failed("Yeobun has not started listening yet. Check the Voice typing tile.")
+            throw ToolError.failed("Yeobun has not started listening yet. Check Voice typing.")
         }
         throw ToolError.failed("Yeobun did not stop listening.")
     }

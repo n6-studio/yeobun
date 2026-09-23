@@ -69,27 +69,6 @@ enum PanelRoute: Equatable, Hashable {
     }
 }
 
-enum HomeTab: String, CaseIterable, Identifiable {
-    case tools
-    case stats
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .tools: "Tools"
-        case .stats: "Stats"
-        }
-    }
-
-    var emptyLabel: String {
-        switch self {
-        case .tools: "No tools on Home"
-        case .stats: "No stats on Home"
-        }
-    }
-}
-
 enum HomeItem: Hashable, Identifiable {
     case tool(ToolID)
     case remote(UUID)
@@ -114,31 +93,34 @@ enum HomeItem: Hashable, Identifiable {
         self = .tool(tool)
     }
 
-    var tab: HomeTab {
+    /// Storage, battery, and network live on the Mac page, not as their own rows.
+    var showsOnHome: Bool {
         switch self {
-        case .tool(let id): id.tab
-        case .remote: .stats
+        case .tool(.storage), .tool(.battery), .tool(.network):
+            false
+        default:
+            true
         }
     }
 
-    var outline: String {
+    var isToggle: Bool {
         switch self {
-        case .tool(let id): id.outline
-        case .remote: "server.rack"
+        case .tool(let id): !id.isInformational
+        case .remote: false
         }
     }
 
-    var fill: String {
+    var route: PanelRoute {
         switch self {
-        case .tool(let id): id.fill
-        case .remote: "server.rack"
+        case .tool(let id): id.route
+        case .remote(let id): .remote(id)
         }
     }
 
-    var opticalNudge: CGSize {
+    var glyph: GlyphID {
         switch self {
-        case .tool(let id): id.opticalNudge
-        case .remote: .zero
+        case .tool(let id): id.glyph
+        case .remote: .hardDrives
         }
     }
 
@@ -165,40 +147,25 @@ extension ToolID {
         case .awake: "Keep awake"
         case .menuBar: "Hidden icons"
         case .voice: "Voice typing"
-        case .machine: "This Mac"
+        case .machine: "This MacBook"
         case .battery: "Battery"
         case .network: "Network"
         case .storage: "Storage"
         }
     }
 
-    var outline: String {
+    var glyph: GlyphID {
         switch self {
-        case .keyboard: "lock"
-        case .scroll: "computermouse"
-        case .lid: "moon.zzz"
-        case .awake: "cup.and.saucer"
-        case .menuBar: "eye.slash"
-        case .voice: "mic"
-        case .machine: "cpu"
-        case .battery: "battery.100percent"
-        case .network: "wifi"
-        case .storage: "internaldrive"
-        }
-    }
-
-    var fill: String {
-        switch self {
-        case .keyboard: "lock.fill"
-        case .scroll: "computermouse.fill"
-        case .lid: "moon.zzz.fill"
-        case .awake: "cup.and.saucer.fill"
-        case .menuBar: "eye.slash.fill"
-        case .voice: "mic.fill"
-        case .machine: "cpu.fill"
-        case .battery: "battery.100percent"
-        case .network: "wifi"
-        case .storage: "internaldrive.fill"
+        case .keyboard: .lock
+        case .scroll: .mouse
+        case .lid: .moonStars
+        case .awake: .coffee
+        case .menuBar: .eyeSlash
+        case .voice: .microphone
+        case .machine: .laptop
+        case .battery: .batteryFull
+        case .network: .wifiHigh
+        case .storage: .hardDrive
         }
     }
 
@@ -216,17 +183,6 @@ extension ToolID {
 
     var isInformational: Bool {
         kind == .informational
-    }
-
-    var tab: HomeTab {
-        isInformational ? .stats : .tools
-    }
-
-    var opticalNudge: CGSize {
-        switch self {
-        case .keyboard: CGSize(width: 0.5, height: 0)
-        default: .zero
-        }
     }
 
     var route: PanelRoute {
@@ -249,24 +205,19 @@ enum Motion {
     static let enter = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.3)
     static let press = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.15)
     static let hover = press
-    static let icon = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.3)
     static let stagger: TimeInterval = 0.1
     static let enterOffset: CGFloat = 8
     static let pressScale: CGFloat = 0.96
     static let hoverScale: CGFloat = 1.06
-    static let iconFromScale: CGFloat = 0.25
-    static let iconBlur: CGFloat = 4
 }
 
 enum Radius {
-    static let tile: CGFloat = 16
-    static let tilePadding: CGFloat = 12
     static let group: CGFloat = 16
     static let groupPadding: CGFloat = 14
     static let panelPadding: CGFloat = 18
-    static let grid: CGFloat = 10
+    static let panelWidth: CGFloat = 320
+    static let row: CGFloat = 12
     static let chrome: CGFloat = 28
-    static let glyph: CGFloat = 30
 }
 
 enum ModuleColor {
@@ -280,10 +231,9 @@ enum ModuleColor {
     static let offFill = Color.primary.opacity(0.08)
     static let offFillHover = Color.primary.opacity(0.13)
     static let glyphOffFill = Color.primary.opacity(0.14)
-    static let glyphOffFillHover = Color.primary.opacity(0.22)
-    static let glyphOnFill = Color.white.opacity(0.22)
-    static let glyphOnFillHover = Color.white.opacity(0.36)
-    static let onHoverWash = Color.white.opacity(0.14)
+    /// On-state wash behind primary text. Dark enough that orange and brown stay readable.
+    static let onFill = 0.18
+    static let onFillHover = 0.28
     static let groupFill = Color.primary.opacity(0.06)
     static let usageWarning = Color.orange
     static let usageCritical = Color.red
@@ -358,21 +308,6 @@ private struct PressScaleButtonBody: View {
     }
 }
 
-struct TileBackdrop: View {
-    var isOn: Bool
-    var hovering: Bool
-    var accent: Color = .clear
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-            .fill(isOn ? accent : (hovering ? ModuleColor.offFillHover : ModuleColor.offFill))
-            .overlay {
-                RoundedRectangle(cornerRadius: Radius.tile, style: .continuous)
-                    .fill(isOn && hovering ? ModuleColor.onHoverWash : Color.clear)
-            }
-    }
-}
-
 struct ChromeButton: View {
     let systemName: String
     let label: String
@@ -393,67 +328,15 @@ struct ChromeButton: View {
     }
 }
 
-struct GlyphCircle: View {
-    let outline: String
-    let fill: String
-    let isOn: Bool
-    var opticalNudge: CGSize = .zero
-
-    @State private var hovering = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        StateSymbol(
-            outline: outline,
-            fill: fill,
-            isActive: isOn,
-            size: 14,
-            opticalNudge: opticalNudge
-        )
-        .foregroundStyle(isOn ? .white : .primary)
-        .frame(width: Radius.glyph, height: Radius.glyph)
-        .background(glyphFill, in: Circle())
-        .contentShape(Circle())
-        .scaleEffect(reduceMotion || !hovering ? 1 : Motion.hoverScale)
-        .onHover { hovering = $0 }
-        .animation(reduceMotion ? nil : Motion.hover, value: hovering)
-        .accessibilityHidden(true)
-    }
-
-    private var glyphFill: Color {
-        if isOn {
-            return hovering ? ModuleColor.glyphOnFillHover : ModuleColor.glyphOnFill
-        }
-        return hovering ? ModuleColor.glyphOffFillHover : ModuleColor.glyphOffFill
-    }
-}
-
 struct StateSymbol: View {
-    let outline: String
-    let fill: String
+    let glyph: GlyphID
     let isActive: Bool
-    var size: CGFloat = 20
-    var opticalNudge: CGSize = .zero
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var size: CGFloat = GlyphSlot.detail
 
     var body: some View {
-        ZStack {
-            symbol(outline, shown: !isActive, weight: .regular)
-                .offset(opticalNudge)
-            symbol(fill, shown: isActive, weight: .semibold)
-        }
-        .frame(width: size + 4, height: size + 4)
-        .accessibilityHidden(true)
-    }
-
-    private func symbol(_ name: String, shown: Bool, weight: Font.Weight) -> some View {
-        Image(systemName: name)
-            .font(.system(size: size, weight: weight))
-            .opacity(shown ? 1 : 0)
-            .scaleEffect(shown ? 1 : Motion.iconFromScale)
-            .blur(radius: reduceMotion || shown ? 0 : Motion.iconBlur)
-            .animation(reduceMotion ? nil : Motion.icon, value: shown)
+        GlyphIcon(id: glyph, filled: isActive)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 

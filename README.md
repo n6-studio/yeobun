@@ -5,23 +5,19 @@
 [![Version](https://img.shields.io/github/v/release/n6-studio/yeobun?label=version)](https://github.com/n6-studio/yeobun/releases/latest)
 [![Made by N6 Studio](https://img.shields.io/badge/Made_by-N6_Studio-4f8cc9?labelColor=353a40)](https://n6.studio/)
 
-**A Control Center–style panel in the menu bar for the extras macOS did not ship. No Dock icon.**  
+**A menu-bar panel for the extras macOS did not ship. No Dock icon.**  
 Lock the built-in keyboard. Reverse mouse scroll. Stay on with the lid closed. Keep the Mac awake. Hide menu bar icons behind a chevron. Type what you say. Glance at this Mac.
 
 *Yeobun* is from Korean **여분**: spare, extra.
 
 <table>
 <tr>
-<td><img src="docs/screenshots/home-light.png" width="320" alt="Yeobun Tools tab in light mode"></td>
-<td><img src="docs/screenshots/home-dark.png" width="320" alt="Yeobun Tools tab in dark mode"></td>
-</tr>
-<tr>
-<td><img src="docs/screenshots/stats-light.png" width="320" alt="Yeobun Stats tab in light mode"></td>
-<td><img src="docs/screenshots/stats-dark.png" width="320" alt="Yeobun Stats tab in dark mode"></td>
+<td><img src="docs/screenshots/home-light.png" width="320" alt="Yeobun home in light mode"></td>
+<td><img src="docs/screenshots/home-dark.png" width="320" alt="Yeobun home in dark mode"></td>
 </tr>
 </table>
 
-Click the wrench to open a two-column grid. **Tools** and **Stats** are tabs; the last one you used is remembered. Click a tile’s **icon** to toggle it. Click the rest of the tile for options. The **gear** opens Settings.
+Click the wrench to open the panel. The boxes on top are stats you pin from Mac or a remote. Each tool is a row: the **switch** turns it on, and the rest of the row opens options. The **gear** opens Settings.
 
 ## Install
 
@@ -43,13 +39,21 @@ Homebrew 6 asks you to trust `n6-studio/tap` the first time. The one-line instal
 
 Or download the disk image from the [latest GitHub release](https://github.com/n6-studio/yeobun/releases/latest) and drag **Yeobun** onto **Applications**. Open it, then look for the wrench in the menu bar. ⌘-drag to reorder; Yeobun puts itself back if it is dragged off the bar, because there is no Dock icon.
 
-If Gatekeeper blocks it, right-click the app → Open. The release is signed locally, not notarized.
-
 Requires macOS 14 or later.
+
+## Quarantine
+
+Yeobun is not signed with an Apple Developer ID. macOS marks a downloaded app as quarantined, and Gatekeeper then refuses to open it. After Yeobun is in Applications, clear the flag:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Yeobun.app
+```
+
+Then open Yeobun. You can also right-click the app and choose Open.
 
 ## Tools
 
-Active tiles fill with their color.
+On rows take a wash of their color. The switch is the control.
 
 ### Built-in keyboard
 
@@ -97,7 +101,7 @@ A closed MacBook with nowhere to dump heat can get hot. Switch it off when you a
 </tr>
 </table>
 
-Blocks idle sleep and display sleep. Turn it on indefinitely, or pick a duration first (5 minutes through 5 hours). The tile shows time left. Quitting the app does not drop the hold.
+Blocks idle sleep and display sleep. Turn it on indefinitely, or pick a duration first (5 minutes through 5 hours). The row shows time left. Quitting the app does not drop the hold.
 
 Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the lid is open.
 
@@ -116,7 +120,7 @@ A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](ht
 
 Finding the icons needs **Accessibility**: on macOS 26 off-screen items are not in the window list, so Yeobun asks each app for its own menu bar extras. **Screen Recording** is optional and draws each app's real icon instead of a generic one.
 
-If the chevron ends up on the wrong side of the hidden icons, they stay shown and the tile tells you to ⌘-drag it back to the right.
+If the chevron ends up on the wrong side of the hidden icons, they stay shown and the row tells you to ⌘-drag it back to the right.
 
 ### Voice typing
 
@@ -127,7 +131,7 @@ If the chevron ends up on the wrong side of the hidden icons, they stay shown an
 </tr>
 </table>
 
-Turn the tool on, then press **⌃⌥V** in any app and start talking. The tile is the master switch: while it is off the shortcut is not registered and nothing can listen. **Listening** is a separate switch that only works while the tool is on. Yeobun turns speech into text **on this Mac** and types it where your cursor is while you are still talking. When the recognizer changes its mind about a word, Yeobun backspaces over it and types the correction. Press the shortcut again to stop, or leave a pause and it stops on its own (**Stop after silence**, 15 seconds to 1 minute, or never). The tile reads **Listening** during a session, the right-click menu gains Start and Stop Listening, and the words also collect in the panel with **Copy** and **Clear**.
+Turn the tool on, then press **⌃⌥V** in any app and start talking. The row is the master switch: while it is off the shortcut is not registered and nothing can listen. **Listening** is a separate switch that only works while the tool is on. Yeobun turns speech into text **on this Mac** and types it where your cursor is while you are still talking. When the recognizer changes its mind about a word, Yeobun backspaces over it and types the correction. Press the shortcut again to stop, or leave a pause and it stops on its own (**Stop after silence**, 15 seconds to 1 minute, or never). The row reads **Listening** during a session, the right-click menu gains Start and Stop Listening, and the words also collect in the panel with **Copy** and **Clear**.
 
 **Language** defaults to the system language. On macOS 26 Yeobun uses the same on-device model as system dictation and downloads a language the first time you pick it. On macOS 14 and 15 it uses the older on-device recognizer, which needs the language downloaded under System Settings › Keyboard › Dictation. Nothing is sent to a server.
 
@@ -139,7 +143,7 @@ Needs **Microphone**. Typing into other apps needs **Accessibility**, the same p
 
 ## Stats
 
-Informational only. Sampled while the panel is open, and in the menu bar if you turn on a glance.
+Informational only. Pin CPU, memory, storage, network, power, or battery from Mac or a remote and it stays in the boxes on Home. **Mac** is a row; its page includes storage. Each remote is a row. Sampled while the panel is open, and in the menu bar if you turn on a stat.
 
 <table>
 <tr>
@@ -164,9 +168,9 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 </tr>
 </table>
 
-- **This Mac** — live CPU and RAM on the tile, plus power in watts when this Mac reports it; detail adds pressure, swap, thermal state, uptime, and the top processes.
-- **Remote** — SSH hosts you add. Each one is a Stats tile with live CPU and RAM, plus power when the host exposes it; detail adds load, disk, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
-- **Battery** — charge, time remaining, power, health, and cycle count. Bluetooth accessories when macOS reports a percentage. On a desktop the tile reads “No battery”.
+- **Mac** — a home row. CPU, memory, and power, plus storage for the boot volume and other disks. Pin any of those to Home.
+- **Remote** — SSH hosts you add. Pick an icon so the row and any pinned stat are easy to tell from this Mac. Detail adds CPU, RAM, power, disk, load, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
+- **Battery** — charge, time remaining, power, health, and cycle count. Bluetooth accessories when macOS reports a percentage. Pin charge to Home if you want it in the boxes.
 - **Network** — link type, Wi-Fi name when macOS allows it, local IP, live down/up.
 - **Storage** — used and free space on the boot volume, plus other mounted disks.
 
@@ -181,8 +185,8 @@ Informational only. Sampled while the panel is open, and in the menu bar if you 
 
 - **Open at login** — keep Yeobun in the menu bar (on by default).
 - **Menu bar** — logo only, icons for tools that are on, or both. The logo stays when nothing is on, so you can still find the app.
-- **Menu bar stats** — optional CPU, battery, or network next to the logo, with a small label above the value.
-- **Remote servers** — add an SSH host (or config alias) to glance at its load from the Stats tab. Needs a key in ssh-agent or `~/.ssh`. Up to 8 hosts.
+- **Menu bar stats** — optional CPU, battery, or network next to the logo, with a small label above the value. Home already shows the four-up glance.
+- **Remote servers** — add an SSH host (or config alias) to glance at its load from Home. Needs a key in ssh-agent or `~/.ssh`. Up to 8 hosts.
 - **Check status** — read each tool from this Mac and restore anything that dropped.
 
 Right-click the menu-bar item for the same toggles without opening the panel.

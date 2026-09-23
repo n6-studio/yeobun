@@ -8,13 +8,48 @@ enum RemoteLinkStatus: String, Equatable {
     case unsupported
 }
 
-struct RemoteServer: Codable, Equatable, Identifiable {
+enum RemoteSymbol {
+    static let fallback = "hard-drives"
+    static let choices = [
+        "hard-drives",
+        "desktop",
+        "laptop",
+        "cloud",
+        "usb",
+        "share-network",
+        "house",
+        "buildings",
+        "package",
+        "terminal-window"
+    ]
+
+    /// Names stored before the Phosphor set. Resolved on read so saved hosts keep their icon.
+    private static let legacy = [
+        "server.rack": "hard-drives",
+        "desktopcomputer": "desktop",
+        "laptopcomputer": "laptop",
+        "externaldrive": "usb",
+        "network": "share-network",
+        "building.2": "buildings",
+        "shippingbox": "package",
+        "terminal": "terminal-window"
+    ]
+
+    static func resolve(_ raw: String?) -> String {
+        let mapped = raw.flatMap { legacy[$0] ?? $0 }
+        guard let mapped, choices.contains(mapped) else { return fallback }
+        return mapped
+    }
+}
+
+struct RemoteServer: Equatable, Identifiable {
     var id: UUID
     var name: String
     var host: String
     var user: String?
     var port: Int?
     var identityPath: String?
+    var symbol: String
 
     init(
         id: UUID = UUID(),
@@ -22,7 +57,8 @@ struct RemoteServer: Codable, Equatable, Identifiable {
         host: String,
         user: String? = nil,
         port: Int? = nil,
-        identityPath: String? = nil
+        identityPath: String? = nil,
+        symbol: String = RemoteSymbol.fallback
     ) {
         self.id = id
         self.name = name
@@ -30,6 +66,7 @@ struct RemoteServer: Codable, Equatable, Identifiable {
         self.user = user
         self.port = port
         self.identityPath = identityPath
+        self.symbol = RemoteSymbol.resolve(symbol)
     }
 
     var destination: String { host }
@@ -43,6 +80,34 @@ struct RemoteServer: Codable, Equatable, Identifiable {
             value += ":\(port)"
         }
         return value
+    }
+}
+
+extension RemoteServer: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case id, name, host, user, port, identityPath, symbol
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        host = try container.decode(String.self, forKey: .host)
+        user = try container.decodeIfPresent(String.self, forKey: .user)
+        port = try container.decodeIfPresent(Int.self, forKey: .port)
+        identityPath = try container.decodeIfPresent(String.self, forKey: .identityPath)
+        symbol = RemoteSymbol.resolve(try container.decodeIfPresent(String.self, forKey: .symbol))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(host, forKey: .host)
+        try container.encodeIfPresent(user, forKey: .user)
+        try container.encodeIfPresent(port, forKey: .port)
+        try container.encodeIfPresent(identityPath, forKey: .identityPath)
+        try container.encode(symbol, forKey: .symbol)
     }
 }
 
@@ -64,6 +129,8 @@ struct RemoteSample: Equatable {
     var diskUsed: UInt64 = 0
     var diskTotal: UInt64 = 0
     var powerWatts: Double?
+    /// `chmod` when the counters exist but are not readable. `none` when the host has no power interface.
+    var powerHint: String?
     var topProcesses: [ProcessUsage] = []
 
     var ramFraction: Double {
@@ -145,7 +212,8 @@ enum RemoteCatalog {
                     host: made.host,
                     user: made.user,
                     port: made.port,
-                    identityPath: made.identityPath
+                    identityPath: made.identityPath,
+                    symbol: server.symbol
                 )
             )
             if result.count == maxServers { break }
@@ -166,6 +234,27 @@ enum RemoteCatalog {
         }
         servers.append(server)
         return servers
+    }
+
+    static func replacing(_ id: UUID, with server: RemoteServer, in servers: [RemoteServer]) throws -> [RemoteServer] {
+        guard let existing = servers.first(where: { $0.id == id }) else {
+            throw ToolError.failed("That server is no longer saved.")
+        }
+        if servers.contains(where: {
+            $0.id != id && $0.name.compare(server.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }) {
+            throw ToolError.failed("A server named \(server.name) is already there.")
+        }
+        let updated = RemoteServer(
+            id: id,
+            name: server.name,
+            host: server.host,
+            user: server.user,
+            port: server.port,
+            identityPath: server.identityPath,
+            symbol: existing.symbol
+        )
+        return servers.map { $0.id == id ? updated : $0 }
     }
 
     static func removing(_ key: String, from servers: [RemoteServer]) throws -> [RemoteServer] {
