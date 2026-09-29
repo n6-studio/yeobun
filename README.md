@@ -37,6 +37,14 @@ brew install --cask yeobun
 
 Homebrew 6 asks you to trust `n6-studio/tap` the first time. The one-line install trusts only this cask.
 
+To update to the latest release:
+
+```sh
+brew upgrade --cask n6-studio/tap/yeobun
+```
+
+Homebrew refreshes the tap before it upgrades. If macOS refuses to open the new version, clear the quarantine flag again (see [Quarantine](#quarantine)).
+
 Or download the disk image from the [latest GitHub release](https://github.com/n6-studio/yeobun/releases/latest) and drag **Yeobun** onto **Applications**. Open it, then look for the wrench in the menu bar. ⌘-drag to reorder; Yeobun puts itself back if it is dragged off the bar, because there is no Dock icon.
 
 Requires macOS 14 or later.
