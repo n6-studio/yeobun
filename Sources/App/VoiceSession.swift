@@ -26,7 +26,6 @@ final class VoiceSession: VoiceDriver {
         didSet {
             guard vocabulary != oldValue else { return }
             corrector = VoiceCorrector(terms: vocabulary)
-            engine?.vocabulary = vocabulary.map(\.text)
         }
     }
 
@@ -121,7 +120,6 @@ final class VoiceSession: VoiceDriver {
         }
 
         let engine = VoiceEngineFactory.make()
-        engine.vocabulary = vocabulary.map(\.text)
         engine.onEvent = { [weak self, weak engine] event in
             guard let self, let engine else { return }
             self.handle(event, from: engine)

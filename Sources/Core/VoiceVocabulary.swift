@@ -1,11 +1,10 @@
 import Foundation
 
-/// One word or term Voice typing should get right.
+/// One word or term Voice typing should write a certain way.
 ///
-/// `text` is the exact spelling to write. It is handed to the recognizer as
-/// a hint, which is enough for words the model half knows. `soundsLike`
-/// lists what the recognizer writes instead when the hint is not enough,
-/// such as "cube control" for "kubectl"; those are rewritten afterwards.
+/// `text` is the exact spelling. `soundsLike` lists what the transcriber
+/// writes instead, such as "cube control" for "kubectl". Those are rewritten
+/// afterwards. The list is not sent to the recognizer.
 struct VoiceTerm: Codable, Equatable, Identifiable {
     var text: String
     var soundsLike: [String] = []
@@ -25,7 +24,6 @@ struct VoiceTerm: Codable, Equatable, Identifiable {
 }
 
 enum VoiceVocabulary {
-    /// The recognizers stop paying attention to long hint lists.
     static let maxTerms = 100
     static let maxLength = 60
 

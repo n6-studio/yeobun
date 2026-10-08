@@ -35,7 +35,8 @@ enum BatteryStats {
                 minutesToFull: charging ? toFull : nil,
                 health: registry.health ?? (description["BatteryHealth"] as? String),
                 cycleCount: registry.cycleCount,
-                watts: registry.watts
+                watts: registry.watts,
+                isLowPowerMode: ProcessInfo.processInfo.isLowPowerModeEnabled
             )
         }
         return nil

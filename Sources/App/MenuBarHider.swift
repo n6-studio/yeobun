@@ -1,36 +1,29 @@
 import AppKit
 import Combine
 
-/// Two extra status items that tuck other apps' icons away, the way Ice and
-/// Hidden Bar do.
+/// A chevron that opens menu-bar icons the user has already removed.
 ///
-/// An off-screen **spacer** sits to the left of a **chevron**. Anything the
-/// user ⌘-drags to the left of the chevron is hidden: the spacer stretches to
-/// 10 000 pt, which pushes every item left of it off the screen. Clicking the
-/// chevron opens a strip of those icons.
-///
-/// The items are created the first time the tool turns on and kept for the
-/// life of the app; turning the tool off only hides them so their positions
-/// survive (`autosaveName`).
+/// ⌘-dragging an icon out of the menu bar parks it off the bar. Clicking the
+/// chevron lists those icons, plus any an app hid itself. The chevron is
+/// created the first time the tool turns on and kept for the life of the app;
+/// turning the tool off only hides it so its position survives (`autosaveName`).
 final class MenuBarHider {
-    private static let hiddenLength: CGFloat = 10_000
-    private static let gapLength: CGFloat = 4
-    private static let chevronAutosave = "Yeobun.MenuBar.Chevron"
-    private static let dividerAutosave = "Yeobun.MenuBar.Divider"
+    /// A removed chevron keeps its autosave slot off the bar on macOS 27.
+    private var chevronAutosave: String {
+        let slot = UserDefaults.standard.integer(forKey: Self.chevronSlotKey)
+        return "Yeobun.Peek.\(slot)"
+    }
+
+    private static let chevronSlotKey = "yeobun.statusSlot.peek"
 
     private let model: AppModel
     private var chevron: NSStatusItem?
-    private var divider: NSStatusItem?
     private var cancellables = Set<AnyCancellable>()
-    private var moveObservers: [NSObjectProtocol] = []
-    private var layoutCheck: DispatchWorkItem?
     private var spinTimer: Timer?
     private var spinAngle: CGFloat = 0
-    private var chevronVisibleObserver: NSKeyValueObservation?
     private var overflow: MenuBarOverflowPanel!
     private let overflowMenu = MenuBarOverflowMenu()
-    private var restoreHideWork: DispatchWorkItem?
-    private var suppressLayoutStretch = false
+    private var menuIgnoreWork: DispatchWorkItem?
 
     init(model: AppModel) {
         self.model = model
@@ -43,15 +36,19 @@ final class MenuBarHider {
             }
         )
         Publishers.CombineLatest(
-            Publishers.CombineLatest3(model.$overflowItems, model.$overflowStripOpen, model.$overflowScanned),
-            Publishers.CombineLatest3(
-                model.$menuBarStripIconSize,
-                model.$menuBarStripLabelSize,
-                model.$menuBarStripLayout
-            )
+            Publishers.CombineLatest(
+                Publishers.CombineLatest3(model.$overflowItems, model.$overflowStripOpen, model.$overflowScanned),
+                Publishers.CombineLatest3(
+                    model.$menuBarStripIconSize,
+                    model.$menuBarStripLabelSize,
+                    model.$menuBarStripLayout
+                )
+            ),
+            model.$mainStatusItemHidden
         )
         .receive(on: DispatchQueue.main)
-        .sink { [weak self] overflow, appearance in
+        .sink { [weak self] combined, yeobunHidden in
+            let (overflow, appearance) = combined
             let (items, open, scanned) = overflow
             let (iconSize, labelSize, layout) = appearance
             self?.setSpinning(open && !scanned)
@@ -62,7 +59,8 @@ final class MenuBarHider {
                 scanned: scanned,
                 iconSize: iconSize,
                 labelSize: labelSize,
-                layout: layout
+                layout: layout,
+                yeobunHidden: yeobunHidden
             )
         }
         .store(in: &cancellables)
@@ -79,67 +77,54 @@ final class MenuBarHider {
 
     deinit {
         spinTimer?.invalidate()
-        for observer in moveObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-    }
-
-    /// Spacer fully left of the chevron. When the user drags the chevron to
-    /// the wrong side, stretching the spacer would push the chevron itself off
-    /// screen, so we refuse to hide until the two are back in order.
-    var layoutIsValid: Bool {
-        guard let dividerFrame = divider?.button?.window?.frame,
-              let chevronFrame = chevron?.button?.window?.frame
-        else { return true }
-        return dividerFrame.maxX <= chevronFrame.minX + 0.5
     }
 
     // MARK: - Apply
 
     private func apply(enabled: Bool) {
-        restoreHideWork?.cancel()
-        restoreHideWork = nil
-        suppressLayoutStretch = false
+        menuIgnoreWork?.cancel()
+        menuIgnoreWork = nil
         overflow.ignoreOutsideClicks = false
         guard enabled else {
-            chevronVisibleObserver = nil
             overflow.dismiss()
             chevron?.isVisible = false
-            divider?.isVisible = false
             return
         }
         ensureItems()
-        guard let chevron, let divider else { return }
+        guard let chevron else { return }
         chevron.isVisible = true
-        divider.isVisible = true
-        observeChevronVisibility()
-
-        let tuck = layoutIsValid
-        if tuck {
-            divider.length = Self.hiddenLength
-            divider.button?.image = nil
-        } else {
-            divider.length = Self.gapLength
-            divider.button?.image = nil
-        }
-        divider.button?.toolTip = "⌘-drag icons left of the chevron to hide them"
 
         if spinTimer == nil {
             chevron.button?.image = Self.chevronImage(stripOpen: model.overflowStripOpen)
         }
         chevron.button?.toolTip = model.overflowStripOpen ? "Close hidden icons" : "Show hidden icons"
         chevron.button?.setAccessibilityLabel(model.overflowStripOpen ? "Close hidden icons" : "Show hidden icons")
+    }
 
-        scheduleLayoutCheck()
+    /// A lower preferred position sits further right. The wrench uses 200.
+    func recoverIfOffBar() {
+        guard model.menuBarHideEnabled else { return }
+        // A zero-height button window is not a position. macOS 27 reports that for
+        // a live status item, and removing it clears the saved slot.
+        func isPlaced(_ item: NSStatusItem?) -> Bool {
+            guard let frame = item?.button?.window?.frame, frame.height > 1 else { return true }
+            return !MenuBarOverflow.isOffMenuBar(item!)
+        }
+        guard !isPlaced(chevron) else { return }
+        if let chevron {
+            NSStatusBar.system.removeStatusItem(chevron)
+        }
+        self.chevron = nil
+        Self.clearSlot(chevronAutosave)
+        apply(enabled: true)
     }
 
     private func ensureItems() {
-        guard chevron == nil || divider == nil else { return }
-        // New status items land at the left of the existing ones, so create the
-        // chevron first and the spacer second to get [spacer][chevron].
+        guard chevron == nil else { return }
         let chevronItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        chevronItem.autosaveName = Self.chevronAutosave
-        chevronItem.behavior = []
+        chevronItem.autosaveName = chevronAutosave
+        // macOS 27 only hosts a status item Control Center is allowed to remove.
+        chevronItem.behavior = .removalAllowed
         if let button = chevronItem.button {
             button.target = self
             button.action = #selector(chevronClicked(_:))
@@ -148,68 +133,27 @@ final class MenuBarHider {
             button.imagePosition = .imageOnly
         }
         chevron = chevronItem
-
-        let dividerItem = NSStatusBar.system.statusItem(withLength: Self.gapLength)
-        dividerItem.autosaveName = Self.dividerAutosave
-        dividerItem.behavior = []
-        if let button = dividerItem.button {
-            button.imageScaling = .scaleNone
-            button.imagePosition = .imageOnly
-            button.setAccessibilityLabel("Yeobun hidden icons")
-        }
-        divider = dividerItem
-
-        observeMoves()
-        observeChevronVisibility()
     }
 
-    /// The chevron is the fallback way to open Yeobun; do not let a ⌘-drag hide it.
-    private func observeChevronVisibility() {
-        guard model.menuBarHideEnabled else {
-            chevronVisibleObserver = nil
-            return
+    /// Put the chevron back after Control Center shows the app again.
+    /// A saved position is cleared so macOS 27 does not restore the off-bar slot.
+    func restoreChevron() {
+        guard model.menuBarHideEnabled else { return }
+        let next = UserDefaults.standard.integer(forKey: Self.chevronSlotKey) + 1
+        UserDefaults.standard.set(next, forKey: Self.chevronSlotKey)
+        if let chevron {
+            NSStatusBar.system.removeStatusItem(chevron)
         }
-        chevronVisibleObserver = chevron?.observe(\.isVisible, options: [.new]) { [weak self] item, _ in
-            guard let self, self.model.menuBarHideEnabled, !item.isVisible else { return }
-            DispatchQueue.main.async {
-                guard self.model.menuBarHideEnabled else { return }
-                self.chevron?.isVisible = true
-            }
-        }
+        self.chevron = nil
+        Self.clearSlot(chevronAutosave)
+        apply(enabled: true)
     }
 
-    private func observeMoves() {
-        for observer in moveObservers {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        moveObservers = [chevron, divider].compactMap { item in
-            guard let window = item?.button?.window else { return nil }
-            return NotificationCenter.default.addObserver(
-                forName: NSWindow.didMoveNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in
-                self?.scheduleLayoutCheck()
-            }
-        }
-    }
-
-    private func scheduleLayoutCheck() {
-        layoutCheck?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            self?.checkLayout()
-        }
-        layoutCheck = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
-    }
-
-    private func checkLayout() {
-        guard model.menuBarHideEnabled, !suppressLayoutStretch else { return }
-        let valid = layoutIsValid
-        model.noteMenuBarLayout(valid: valid)
-        if valid, divider?.length != Self.hiddenLength {
-            apply(enabled: true)
-        }
+    private static func clearSlot(_ name: String) {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: "NSStatusItem Preferred Position \(name)")
+        defaults.set(true, forKey: "NSStatusItem Visible \(name)")
+        defaults.set(true, forKey: "NSStatusItem VisibleCC \(name)")
     }
 
     /// Show the item's own menu under the pointer; items without a menu are
@@ -246,44 +190,15 @@ final class MenuBarHider {
 
     private func showNativeContextMenu(_ item: OverflowItem) {
         overflow.ignoreOutsideClicks = true
-        withItemsTemporarilyShown { [weak self] in
-            guard let self else { return }
-            if MenuBarOverflowResolver.showMenu(item) { return }
-            if MenuBarOverflowResolver.click(item, right: true) { return }
-            self.overflow.ignoreOutsideClicks = false
-            self.restoreHiddenLength()
+        menuIgnoreWork?.cancel()
+        if !MenuBarOverflowResolver.showMenu(item) {
+            _ = MenuBarOverflowResolver.click(item, right: true)
         }
-    }
-
-    /// Shrink the spacer so tucked icons slide into the bar, run `body`, then
-    /// hide them again. Right-click menus appear at the item, which is useless
-    /// while it is still off screen.
-    private func withItemsTemporarilyShown(_ body: @escaping () -> Void) {
-        restoreHideWork?.cancel()
-        restoreHideWork = nil
-        guard layoutIsValid else {
-            body()
-            return
+        let work = DispatchWorkItem { [weak self] in
+            self?.overflow.ignoreOutsideClicks = false
         }
-        suppressLayoutStretch = true
-        divider?.length = Self.gapLength
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            body()
-            let work = DispatchWorkItem { [weak self] in
-                self?.restoreHiddenLength()
-            }
-            self?.restoreHideWork = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
-        }
-    }
-
-    private func restoreHiddenLength() {
-        restoreHideWork?.cancel()
-        restoreHideWork = nil
-        suppressLayoutStretch = false
-        overflow.ignoreOutsideClicks = false
-        guard model.menuBarHideEnabled, layoutIsValid else { return }
-        divider?.length = Self.hiddenLength
+        menuIgnoreWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
     }
 
     private func presentOverflow(
@@ -292,7 +207,8 @@ final class MenuBarHider {
         scanned: Bool,
         iconSize: Int,
         labelSize: Int,
-        layout: MenuBarStripLayout
+        layout: MenuBarStripLayout,
+        yeobunHidden: Bool
     ) {
         guard model.menuBarHideEnabled, open, scanned,
               let anchor = chevron?.button?.window?.frame
@@ -301,11 +217,18 @@ final class MenuBarHider {
             return
         }
         overflow.show(
-            items: items,
+            items: items.filter { !$0.opensYeobun },
             accessibility: model.accessibilityTrusted,
             layout: layout,
             iconSize: CGFloat(iconSize),
             labelSize: CGFloat(labelSize),
+            yeobunHidden: yeobunHidden,
+            onShowYeobun: { [weak model] in
+                model?.restoreMenuBarIcon()
+            },
+            onOpenMenuBarSettings: {
+                MenuBarOverflowResolver.openMenuBarSettings()
+            },
             anchor: anchor
         )
     }
@@ -314,10 +237,13 @@ final class MenuBarHider {
 
     @objc private func chevronClicked(_ sender: Any?) {
         if NSApp.currentEvent?.type == .rightMouseUp {
-            showContextMenu()
+            // Same as the wrench: the menu has to open after the mouse-up,
+            // or that mouse-up dismisses it immediately.
+            DispatchQueue.main.async { [weak self] in
+                self?.showContextMenu()
+            }
             return
         }
-        restoreHiddenLength()
         model.chevronClicked()
     }
 
@@ -332,15 +258,9 @@ final class MenuBarHider {
         off.target = self
         menu.addItem(off)
 
-        chevron.menu = menu
-        chevron.button?.performClick(nil)
-        DispatchQueue.main.async { [weak self] in
-            guard let self, let chevron = self.chevron else { return }
-            chevron.menu = nil
-            chevron.button?.target = self
-            chevron.button?.action = #selector(self.chevronClicked(_:))
-            chevron.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
-        }
+        guard let button = chevron.button else { return }
+        let y = button.isFlipped ? button.bounds.height : 0
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: y), in: button)
     }
 
     @objc private func openFromMenu() {

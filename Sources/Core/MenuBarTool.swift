@@ -19,7 +19,7 @@ enum MenuBarStripLayout: String, CaseIterable, Identifiable, Codable {
 /// The status items themselves live in the menu-bar app (`MenuBarHider`);
 /// this tool only owns the persisted intent so the CLI and the app agree.
 /// Turning it on from the CLI writes the state and pings the app, which
-/// creates the chevron and the off-screen spacer.
+/// creates the chevron.
 final class MenuBarTool: ToggleTool {
     let id: ToolID = .menuBar
 

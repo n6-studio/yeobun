@@ -21,7 +21,7 @@ struct MenuBarItemWindow: Equatable, Identifiable {
 /// through the window list without any permission. On macOS 26 every status
 /// item window is owned by Control Centre, so the owner name is not the app.
 enum MenuBarOverflow {
-    /// Items far wider than this are hider dividers (Yeobun, Ice, Hidden Bar).
+    /// Items far wider than this are other hiders' spacers (Ice, Hidden Bar).
     private static let maxItemWidth: CGFloat = 600
     private static let minItemWidth: CGFloat = 6
     private static let itemHeightRange: ClosedRange<CGFloat> = 16...48

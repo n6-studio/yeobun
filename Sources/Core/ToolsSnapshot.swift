@@ -83,6 +83,7 @@ struct MacStatusJSON: Encodable {
     var powerWatts: Double?
     var batteryPercent: Int?
     var batteryCharging: Bool?
+    var lowPowerMode: Bool?
     var diskUsedBytes: UInt64?
     var diskTotalBytes: UInt64?
     var networkKind: String
@@ -225,6 +226,7 @@ enum StatusBuilder {
             powerWatts: roundWatts(sample.powerWatts),
             batteryPercent: sample.battery.map { Int(($0.percent * 100).rounded()) },
             batteryCharging: sample.battery?.isCharging,
+            lowPowerMode: sample.battery?.isLowPowerMode,
             diskUsedBytes: sample.bootVolume?.used,
             diskTotalBytes: sample.bootVolume?.total,
             networkKind: sample.network.kind.lowercased(),

@@ -34,6 +34,8 @@ struct BatterySample: Equatable {
     var health: String?
     var cycleCount: Int?
     var watts: Double? = nil
+    /// On when this Mac is in Low Power Mode. A state, not a pinnable number.
+    var isLowPowerMode: Bool = false
 }
 
 struct NetworkSample: Equatable {

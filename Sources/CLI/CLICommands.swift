@@ -357,7 +357,8 @@ enum CLICommands {
         }
         if let battery = status.batteryPercent {
             let charge = status.batteryCharging == true ? " charging" : ""
-            parts.append("battery \(battery)%\(charge)")
+            let lowPower = status.lowPowerMode == true ? " low power" : ""
+            parts.append("battery \(battery)%\(charge)\(lowPower)")
         }
         parts.append(status.networkKind)
         if status.networkDownBytesPerSecond > 0 || status.networkUpBytesPerSecond > 0 {

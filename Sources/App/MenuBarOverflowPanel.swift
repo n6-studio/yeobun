@@ -95,13 +95,34 @@ struct OverflowMenuEntry {
 /// app's own `AXExtrasMenuBar`: every item reports a frame there. Items a
 /// hider tucked away sit at a negative x; items an app removed from the bar
 /// report a frame outside any menu bar row.
+///
+/// On macOS 27 the bar is one window, so a removed icon has no picture of its
+/// own and the tile keeps the app icon. Frames are read again at classification
+/// and click time, because a reflow leaves the previous frame pointing at a neighbor.
 enum MenuBarOverflowResolver {
+    /// macOS 14–26 can still snapshot a per-icon window. macOS 27 draws the
+    /// whole bar as one window, and a removed icon is not in it.
+    static var recordsGlyphs: Bool {
+        if #available(macOS 27, *) { return false }
+        return true
+    }
+
     static var screenRecordingGranted: Bool {
         CGPreflightScreenCaptureAccess()
     }
 
     static func requestScreenRecording() {
         _ = CGRequestScreenCaptureAccess()
+    }
+
+    static func openMenuBarSettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.controlcenter"
+        ]
+        for raw in urls {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
     }
 
     static func openScreenRecordingSettings() {
@@ -120,8 +141,8 @@ enum MenuBarOverflowResolver {
     /// Without Accessibility only the window list is available, which on
     /// macOS 26 misses off-screen items entirely.
     static func identify(windows: [MenuBarItemWindow]) -> [OverflowItem] {
-        // Skip our own windows: the spacer, chevron, and panel icon are
-        // not foreign extras. The panel icon is injected separately when
+        // Skip our own windows: the chevron and panel icon are not foreign
+        // extras. The panel icon is injected separately when
         // it is off the bar, so a click can open Yeobun on screen.
         let foreign = windows.filter { window in
             window.ownerPID != ProcessInfo.processInfo.processIdentifier
@@ -139,12 +160,14 @@ enum MenuBarOverflowResolver {
         }
         var items: [OverflowItem] = []
         for extra in extrasByApp() {
-            let placement = MenuBarOverflow.placement(of: extra.frame)
+            // Re-read after any reflow. A frame captured earlier can sit on a neighbor.
+            guard let frame = frame(of: extra.element) else { continue }
+            let placement = MenuBarOverflow.placement(of: frame)
             guard placement != .visible else { continue }
-            let window = foreign.first { $0.bounds.intersects(extra.frame.insetBy(dx: 2, dy: 2)) }
+            let window = foreign.first { $0.bounds.intersects(frame.insetBy(dx: 2, dy: 2)) }
             items.append(OverflowItem(
                 id: "app-\(extra.app.processIdentifier)-\(extra.index)",
-                bounds: extra.frame,
+                bounds: frame,
                 placement: placement,
                 captureWindow: window,
                 appName: extra.app.localizedName ?? extra.title,
@@ -161,24 +184,11 @@ enum MenuBarOverflowResolver {
         }
     }
 
-    /// Snapshot each item that still has a window. Needs Screen Recording.
+    /// Snapshot each item. Needs Screen Recording on macOS 14–26, where each
+    /// icon is still its own window. On macOS 27 the tile keeps the app icon.
     static func capture(_ items: [OverflowItem]) async -> [OverflowItem] {
-        guard screenRecordingGranted, !items.isEmpty else { return items }
-        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        else { return items }
-        var result = items
-        for index in result.indices {
-            let item = result[index]
-            let match = content.windows.first { window in
-                if let capture = item.captureWindow, window.windowID == capture.id { return true }
-                guard let pid = item.pid, window.owningApplication?.processID == pid else { return false }
-                return window.frame.intersects(item.bounds.insetBy(dx: 2, dy: 2))
-                    && window.frame.height <= 48
-            }
-            guard let match, let image = await snapshot(match) else { continue }
-            result[index].image = NSImage(cgImage: image, size: match.frame.size)
-        }
-        return result
+        guard recordsGlyphs else { return items }
+        return await captureWindows(items)
     }
 
     /// The item's menu, if it has one. Read fresh at click time.
@@ -235,13 +245,14 @@ enum MenuBarOverflowResolver {
     private static func extrasByApp() -> [Extra] {
         var result: [Extra] = []
         let me = ProcessInfo.processInfo.processIdentifier
-        // Own extras (wrench, chevron, spacer) stay out of the strip. The wrench
+        // Own extras (wrench, chevron) stay out of the strip. The wrench
         // is prepended on its own when it is off the bar, so a click can open
         // the panel from the chevron instead of an off-screen button.
         for app in NSWorkspace.shared.runningApplications
         where app.activationPolicy != .prohibited
             && app.processIdentifier != me
-            && app.bundleIdentifier != "com.apple.controlcenter" {
+            && app.bundleIdentifier != "com.apple.controlcenter"
+            && app.bundleIdentifier != "com.apple.MenuBarAgent" {
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(axApp, 0.25)
             var barValue: CFTypeRef?
@@ -255,7 +266,9 @@ enum MenuBarOverflowResolver {
             else { continue }
             for (index, child) in children.enumerated() {
                 // Zero-size entries are proxies or stale buttons, not items.
+                // The system overflow control is a hosting group, not one of the user's icons.
                 guard let frame = frame(of: child), frame.width > 0.5, frame.height > 0.5 else { continue }
+                if isOverflowControl(child) { continue }
                 let title = title(of: child)
                 let generic = title.map { $0.caseInsensitiveCompare("status menu") == .orderedSame } ?? true
                 result.append(Extra(
@@ -327,6 +340,49 @@ enum MenuBarOverflowResolver {
                 children: submenu.map { entries(of: $0, depth: depth + 1) } ?? []
             )
         }
+    }
+
+    private static func captureWindows(_ items: [OverflowItem]) async -> [OverflowItem] {
+        guard screenRecordingGranted, !items.isEmpty else { return items }
+        guard let content = try? await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        else { return items }
+        var result = items
+        for index in result.indices {
+            let item = result[index]
+            let match = content.windows.first { window in
+                if let capture = item.captureWindow, window.windowID == capture.id { return true }
+                guard let pid = item.pid, window.owningApplication?.processID == pid else { return false }
+                return window.frame.intersects(item.bounds.insetBy(dx: 2, dy: 2))
+                    && window.frame.height <= 48
+            }
+            guard let match, let image = await snapshot(match) else { continue }
+            result[index].image = NSImage(cgImage: image, size: match.frame.size)
+        }
+        return result
+    }
+
+    /// MenuBarAgent's double-arrow, and any hosting group that is not an icon.
+    private static func isOverflowControl(_ element: AXUIElement) -> Bool {
+        let role = stringAttribute(element, kAXRoleAttribute)
+        let subrole = stringAttribute(element, kAXSubroleAttribute)
+        if role == "AXGroup" || subrole == "AXHostingView" { return true }
+        let label = [
+            title(of: element),
+            stringAttribute(element, kAXDescriptionAttribute),
+            stringAttribute(element, kAXHelpAttribute),
+            stringAttribute(element, kAXIdentifierAttribute)
+        ]
+        .compactMap { $0?.lowercased() }
+        .joined(separator: " ")
+        return label.contains("overflow")
+    }
+
+    private static func stringAttribute(_ element: AXUIElement, _ key: String) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success,
+              let text = value as? String, !text.isEmpty
+        else { return nil }
+        return text
     }
 
     private static func snapshot(_ window: SCWindow) async -> CGImage? {
@@ -434,6 +490,19 @@ final class MenuBarOverflowMenu: NSObject, NSMenuDelegate {
     }
 }
 
+/// Arguments for one presentation of the hidden-icons strip.
+private struct StripSnapshot {
+    var items: [OverflowItem]
+    var accessibility: Bool
+    var layout: MenuBarStripLayout
+    var iconSize: CGFloat
+    var labelSize: CGFloat
+    var yeobunHidden: Bool
+    var onShowYeobun: () -> Void
+    var onOpenMenuBarSettings: () -> Void
+    var anchor: NSRect
+}
+
 /// Floating strip under the chevron that shows the icons macOS hid.
 final class MenuBarOverflowPanel {
     private var panel: NSPanel?
@@ -452,6 +521,14 @@ final class MenuBarOverflowPanel {
     /// While a foreign item's own menu is up, clicks go to that app and would
     /// otherwise look like an outside click.
     var ignoreOutsideClicks = false
+    private var snapshot: StripSnapshot?
+    private var helpPopover: NSPopover?
+    private weak var helpAnchor: NSView?
+    private let stillMissing = StillMissingFlag()
+    /// Set when a refresh replaces the strip while the popover is open.
+    private var reopenHelp = false
+    private var reopenExpanded = false
+    private let helpDelegate = HelpPopoverDelegate()
 
     func show(
         items: [OverflowItem],
@@ -459,20 +536,65 @@ final class MenuBarOverflowPanel {
         layout: MenuBarStripLayout,
         iconSize: CGFloat,
         labelSize: CGFloat,
+        yeobunHidden: Bool,
+        onShowYeobun: @escaping () -> Void,
+        onOpenMenuBarSettings: @escaping () -> Void,
         anchor: NSRect
     ) {
-        let host = OverflowHostingView(rootView: OverflowStrip(
+        snapshot = StripSnapshot(
             items: items,
             accessibility: accessibility,
             layout: layout,
             iconSize: iconSize,
             labelSize: labelSize,
+            yeobunHidden: yeobunHidden,
+            onShowYeobun: onShowYeobun,
+            onOpenMenuBarSettings: onOpenMenuBarSettings,
+            anchor: anchor
+        )
+        install()
+    }
+
+    func dismiss() {
+        reopenHelp = false
+        closeHelp()
+        snapshot = nil
+        stopMonitors()
+        guard let panel, panel.isVisible else { return }
+        panel.orderOut(nil)
+        onDismiss()
+    }
+
+    private func install() {
+        guard let snapshot else { return }
+        let helpWasOpen = helpPopover?.isShown == true
+        let host = OverflowHostingView(rootView: OverflowStrip(
+            items: snapshot.items,
+            accessibility: snapshot.accessibility,
+            layout: snapshot.layout,
+            iconSize: snapshot.iconSize,
+            labelSize: snapshot.labelSize,
+            yeobunHidden: snapshot.yeobunHidden,
+            onShowYeobun: snapshot.onShowYeobun,
+            onOpenMenuBarSettings: snapshot.onOpenMenuBarSettings,
+            onShowMissingAppHelp: { [weak self] in
+                self?.toggleHelp()
+            },
+            onInfoAnchor: { [weak self] view in
+                guard let self else { return }
+                self.helpAnchor = view
+                guard self.reopenHelp, view.window != nil else { return }
+                self.reopenHelp = false
+                self.stillMissing.open = self.reopenExpanded
+                self.showHelp(reset: false)
+            },
             onClick: { [weak self] item, click in
                 self?.onClick(item, click)
             }
         ))
         host.sizingOptions = [.intrinsicContentSize]
         let size = host.fittingSize
+        let anchor = snapshot.anchor
         let panel = self.panel ?? makePanel()
         panel.contentView = host
         var frame = NSRect(
@@ -488,13 +610,70 @@ final class MenuBarOverflowPanel {
         panel.orderFrontRegardless()
         self.panel = panel
         startMonitors()
+        if helpWasOpen {
+            reopenExpanded = stillMissing.open
+            closeHelp()
+            reopenHelp = true
+        }
     }
 
-    func dismiss() {
-        stopMonitors()
-        guard let panel, panel.isVisible else { return }
-        panel.orderOut(nil)
-        onDismiss()
+    private func toggleHelp() {
+        if helpPopover?.isShown == true {
+            closeHelp()
+        } else {
+            showHelp(reset: true)
+        }
+    }
+
+    private func showHelp(reset: Bool) {
+        guard let helpAnchor, helpAnchor.window != nil else { return }
+        let expanded = reset ? false : stillMissing.open
+        closeHelp()
+        stillMissing.open = expanded
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.animates = true
+        helpDelegate.onClose = { [weak self] in
+            self?.helpPopover = nil
+            self?.stillMissing.open = false
+        }
+        popover.delegate = helpDelegate
+        let host = NSHostingController(rootView: MissingAppHelp(
+            still: stillMissing,
+            onOpenMenuBarSettings: { [weak self] in
+                self?.snapshot?.onOpenMenuBarSettings()
+                self?.dismiss()
+            },
+            onExpanded: { [weak self] in
+                DispatchQueue.main.async { self?.updateHelpSize() }
+            }
+        ))
+        host.sizingOptions = [.intrinsicContentSize]
+        popover.contentViewController = host
+        helpPopover = popover
+        popover.show(relativeTo: helpAnchor.bounds, of: helpAnchor, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.level = NSWindow.Level(
+            rawValue: NSWindow.Level.popUpMenu.rawValue + 1
+        )
+        updateHelpSize()
+    }
+
+    private func updateHelpSize() {
+        guard let popover = helpPopover,
+              popover.isShown,
+              let host = popover.contentViewController as? NSHostingController<MissingAppHelp>
+        else { return }
+        host.view.layoutSubtreeIfNeeded()
+        let width: CGFloat = 320
+        let fit = host.sizeThatFits(in: CGSize(width: width, height: 2400))
+        popover.contentSize = NSSize(width: width, height: max(fit.height, 1))
+    }
+
+    private func closeHelp() {
+        helpPopover?.delegate = nil
+        helpPopover?.performClose(nil)
+        helpPopover = nil
+        stillMissing.open = false
     }
 
     private func makePanel() -> NSPanel {
@@ -533,11 +712,13 @@ final class MenuBarOverflowPanel {
             }
         }
         escape = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
-            if event.keyCode == 53 {
-                self?.dismiss()
+            guard event.keyCode == 53 else { return event }
+            if self?.helpPopover?.isShown == true {
+                self?.closeHelp()
                 return nil
             }
-            return event
+            self?.dismiss()
+            return nil
         }
     }
 
@@ -550,6 +731,14 @@ final class MenuBarOverflowPanel {
             NSEvent.removeMonitor(escape)
             self.escape = nil
         }
+    }
+}
+
+private final class HelpPopoverDelegate: NSObject, NSPopoverDelegate {
+    var onClose: () -> Void = {}
+
+    func popoverDidClose(_ notification: Notification) {
+        onClose()
     }
 }
 

@@ -75,7 +75,7 @@ private func captureAll(to out: URL) throws {
         seedHome(model)
         model.menuBarHideEnabled = true
         model.menuBarHidden = true
-        model.menuBarStatus = "Hidden icons sit left of the chevron"
+        model.menuBarStatus = "Removed icons open from the chevron"
     }
     try writePair(name: "voice", to: out) { model, presentation in
         presentation.route = .voice
@@ -151,7 +151,6 @@ private func seedHome(_ model: AppModel) {
     model.menuBarHideEnabled = false
     model.menuBarHidden = true
     model.menuBarStatus = "Icons stay in the menu bar"
-    model.menuBarNotice = nil
     model.menuBarStripLayout = .list
     model.menuBarStripIconSize = MenuBarTool.defaultIconSize
     model.menuBarStripLabelSize = MenuBarTool.defaultLabelSize

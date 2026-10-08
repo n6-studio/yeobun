@@ -2,22 +2,16 @@ import AVFoundation
 import Foundation
 import Speech
 
-/// `SpeechAnalyzer` with the dictation module, macOS 26 and later.
+/// `SpeechAnalyzer` with `SpeechTranscriber`, macOS 26 and later.
 ///
-/// This is the model behind system dictation: on device, punctuated, and
-/// it finalizes phrases as you pause. Language models download on demand.
+/// On device, and it finalizes phrases as you pause. Language models
+/// download on demand. Vocabulary is applied after recognition, not as
+/// contextual strings on the transcriber.
 @available(macOS 26, *)
 final class AnalyzerSpeechEngine: VoiceSpeechEngine {
     var onEvent: ((VoiceEngineEvent) -> Void)?
-    var vocabulary: [String] = [] {
-        didSet {
-            guard vocabulary != oldValue, let analyzer else { return }
-            let context = Self.context(for: vocabulary)
-            Task { try? await analyzer.setContext(context) }
-        }
-    }
 
-    private var transcriber: DictationTranscriber?
+    private var transcriber: SpeechTranscriber?
     private var analyzer: SpeechAnalyzer?
     private var analyzerFormat: AVAudioFormat?
     private var input: AsyncStream<AnalyzerInput>.Continuation?
@@ -26,14 +20,15 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
     private let lock = NSLock()
 
     func supportedLocales() async -> [Locale] {
-        await DictationTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
+        await SpeechTranscriber.supportedLocales.sorted { $0.identifier < $1.identifier }
     }
 
     func support(for locale: Locale) async -> VoiceLocaleSupport {
-        guard let match = await DictationTranscriber.supportedLocale(equivalentTo: locale) else {
+        guard SpeechTranscriber.isAvailable else { return .unsupported }
+        guard let match = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
             return .unsupported
         }
-        let installed = await DictationTranscriber.installedLocales.contains {
+        let installed = await SpeechTranscriber.installedLocales.contains {
             $0.identifier(.bcp47) == match.identifier(.bcp47)
         }
         return installed ? .ready : .needsDownload
@@ -41,16 +36,13 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
 
     func prepare(locale: Locale) async throws {
         let name = VoiceEngineFactory.localeName(locale)
-        guard let match = await DictationTranscriber.supportedLocale(equivalentTo: locale) else {
+        guard SpeechTranscriber.isAvailable else {
+            throw VoiceError("Speech transcription is not available on this Mac.")
+        }
+        guard let match = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
             throw VoiceError("\(name) is not supported for Voice typing on this Mac.")
         }
-        let transcriber = DictationTranscriber(
-            locale: match,
-            contentHints: [],
-            transcriptionOptions: [.punctuation],
-            reportingOptions: [.volatileResults, .frequentFinalization],
-            attributeOptions: []
-        )
+        let transcriber = SpeechTranscriber(locale: match, preset: .progressiveTranscription)
         if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             emit(.progress("Downloading \(name)…"))
             do {
@@ -89,9 +81,6 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
                 await MainActor.run { deliver(.failed(message)) }
             }
         }
-        if !vocabulary.isEmpty {
-            try await analyzer.setContext(Self.context(for: vocabulary))
-        }
         try await analyzer.start(inputSequence: stream)
         self.analyzer = analyzer
     }
@@ -117,12 +106,6 @@ final class AnalyzerSpeechEngine: VoiceSpeechEngine {
         // Results finish once the analyzer does; give the last phrase time to land.
         _ = await resultsTask?.result
         resultsTask = nil
-    }
-
-    private static func context(for vocabulary: [String]) -> AnalysisContext {
-        let context = AnalysisContext()
-        context.contextualStrings[.general] = vocabulary
-        return context
     }
 
     private func emit(_ event: VoiceEngineEvent) {

@@ -19,24 +19,32 @@ struct OverflowStrip: View {
     var layout: MenuBarStripLayout = .grid
     var iconSize: CGFloat = 24
     var labelSize: CGFloat = 9
+    var yeobunHidden = false
+    var onShowYeobun: () -> Void = {}
+    var onOpenMenuBarSettings: () -> Void = {}
+    var onShowMissingAppHelp: () -> Void = {}
+    var onInfoAnchor: (NSView) -> Void = { _ in }
     let onClick: (OverflowItem, OverflowClick) -> Void
 
     var body: some View {
-        Group {
-            if items.isEmpty {
-                Text(accessibility ? "No hidden icons" : "Allow Accessibility to list hidden icons")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .padding(.horizontal, 8)
-                    .frame(width: panelWidth)
-                    .frame(minHeight: emptyHeight)
-            } else if layout == .list {
-                list
-            } else {
-                grid
+        VStack(alignment: .leading, spacing: 8) {
+            Group {
+                if items.isEmpty {
+                    Text(accessibility ? "No hidden icons" : "Allow Accessibility to list hidden icons")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .padding(.horizontal, 8)
+                        .frame(width: panelWidth)
+                        .frame(minHeight: emptyHeight)
+                } else if layout == .list {
+                    list
+                } else {
+                    grid
+                }
             }
+            footer
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
@@ -127,11 +135,143 @@ struct OverflowStrip: View {
         layout == .list ? listRowHeight : tileHeight
     }
 
+    /// Grid keeps the controls under the tiles. List uses the wider row and
+    /// sits them at the trailing edge.
+    private var footer: some View {
+        HStack(spacing: 6) {
+            if layout == .list { Spacer(minLength: 0) }
+            if yeobunHidden {
+                Button(action: onShowYeobun) {
+                    Image(nsImage: MenuBarIcon.makeImage(mode: .logoOnly, tools: []))
+                        .frame(width: 16, height: 16)
+                        .frame(width: Radius.chrome, height: Radius.chrome)
+                        .background(ModuleColor.offFill, in: Circle())
+                }
+                .buttonStyle(PressScaleButtonStyle())
+                .accessibilityLabel("Show Yeobun")
+                .help("Show Yeobun")
+            }
+            ChromeButton(systemName: "gearshape", label: "Menu Bar settings", action: onOpenMenuBarSettings)
+                .help("Menu Bar settings")
+            ChromeButton(systemName: "info", label: "Missing an app", action: onShowMissingAppHelp)
+                .help("Missing an app")
+                .background(AnchorReader(onResolve: onInfoAnchor))
+            if layout != .list { Spacer(minLength: 0) }
+        }
+        .frame(width: layout == .list ? panelWidth : contentWidth, alignment: layout == .list ? .trailing : .leading)
+    }
+
     private var rows: [[OverflowItem]] {
         stride(from: 0, to: items.count, by: columnCount).map { start in
             Array(items[start ..< min(start + columnCount, items.count)])
         }
     }
+}
+
+/// Collapsed until the popover's second section is opened. Owned by the panel
+/// so a strip refresh does not expand it.
+final class StillMissingFlag: ObservableObject {
+    @Published var open = false
+}
+
+/// Popover for an app that is not in the menu bar. The commands stay folded.
+struct MissingAppHelp: View {
+    @ObservedObject var still: StillMissingFlag
+    var onOpenMenuBarSettings: () -> Void
+    var onExpanded: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Don't see an app?")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Allow it in Menu Bar settings to put it back.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Open Menu Bar settings", action: onOpenMenuBarSettings)
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+
+            Button {
+                still.open.toggle()
+                onExpanded()
+            } label: {
+                HStack(spacing: 6) {
+                    Text("Still don't see it?")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer(minLength: 8)
+                    Image(systemName: still.open ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Still don't see it?")
+            .padding(.top, 4)
+
+            if still.open {
+                Text("Quit the app, open a copy, then open the original. Replace the name and the path. Launch the copy with open.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                commandBlock(
+                    """
+                    osascript -e 'quit app "App Name"'
+                    ditto "/Applications/App.app" /tmp/Menu.app
+                    codesign --force --deep --sign - /tmp/Menu.app
+                    open /tmp/Menu.app
+                    """
+                )
+                Text("When the copy's icon is on the bar, quit it and open the original.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                commandBlock(
+                    """
+                    osascript -e 'quit app "App Name"'
+                    open "/Applications/App.app"
+                    rm -rf /tmp/Menu.app
+                    """
+                )
+            }
+        }
+        .padding(14)
+        .frame(width: 320, alignment: .leading)
+    }
+
+    private func commandBlock(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundStyle(.primary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// Reports the info button's view so the popover can anchor to it. The view
+/// does not take clicks; the button in front does.
+private struct AnchorReader: NSViewRepresentable {
+    var onResolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = AnchorView()
+        DispatchQueue.main.async { onResolve(view) }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { onResolve(view) }
+    }
+}
+
+private final class AnchorView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 struct OverflowTile: View {

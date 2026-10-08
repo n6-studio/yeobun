@@ -453,30 +453,24 @@ private struct MenuBarDetail: View {
                 }
                 .stagger(index: 3, generation: presentation.generation)
 
-                if let notice = model.menuBarNotice {
-                    Text(notice)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
 
             GroupedPanel {
-                Text("⌘-drag icons left of the chevron to hide them. Click the chevron to show them. If Yeobun is hidden, it is the first tile.")
+                Text("⌘-drag an icon out of the menu bar and it leaves. Click the chevron to open it. The info icon explains Menu Bar settings, and the commands to run if the icon still stays off the bar. The gear opens those settings, and Yeobun’s icon shows there when the wrench is hidden. Accessibility finds those icons.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .stagger(index: 4, generation: presentation.generation)
 
-            if !model.screenRecordingGranted || !model.accessibilityTrusted {
+            if (MenuBarOverflowResolver.recordsGlyphs && !model.screenRecordingGranted) || !model.accessibilityTrusted {
                 GroupedPanel {
-                    if !model.screenRecordingGranted {
+                    if MenuBarOverflowResolver.recordsGlyphs, !model.screenRecordingGranted {
                         HStack {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text("Screen Recording")
                                     .font(.system(size: 13, weight: .semibold))
-                                Text("Use each app's real icon")
+                                Text("Draw each app's real glyph")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                             }
@@ -1091,6 +1085,9 @@ private struct BatteryDetail: View {
                         pin: HomePin(source: .mac, metric: .battery)
                     )
                     .stagger(index: 0, generation: presentation.generation)
+
+                    StatRow(label: "Low Power Mode", value: battery.isLowPowerMode ? "On" : "Off")
+                        .stagger(index: 1, generation: presentation.generation)
 
                     StatRow(label: "Status", value: model.batteryStatusLabel)
                         .stagger(index: 1, generation: presentation.generation)

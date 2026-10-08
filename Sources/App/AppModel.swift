@@ -44,10 +44,9 @@ final class AppModel: ObservableObject {
     }
 
     @Published var menuBarHideEnabled = false
-    /// `true` while the icons left of the chevron are tucked away.
+    /// Stored with the toggle. The chevron lists icons already taken off the bar.
     @Published var menuBarHidden = true
     @Published var menuBarStatus = "Icons stay in the menu bar"
-    @Published var menuBarNotice: String?
     @Published var menuBarStripIconSize: Int {
         didSet {
             guard menuBarStripIconSize != oldValue, !suppressMenuBarPersist else { return }
@@ -136,6 +135,9 @@ final class AppModel: ObservableObject {
     var openPanel: ((NSView?) -> Void)?
     /// True when the wrench is not in the visible menu bar.
     var isMainStatusItemHidden: (() -> Bool)?
+    var restoreMainStatusItem: (() -> Void)?
+    /// Wrench is off the menu bar. The hidden-icons strip shows a control for it.
+    @Published var mainStatusItemHidden = false
 
     @Published var loginItemNotice: String?
     @Published var statusCheckNotice: String?
@@ -1094,7 +1096,6 @@ final class AppModel: ObservableObject {
 
     func setMenuBarHideEnabled(_ enabled: Bool) {
         guard enabled != menuBarHideEnabled else { return }
-        menuBarNotice = nil
         menuBarHideEnabled = enabled
         if enabled {
             menuBarHidden = true
@@ -1121,6 +1122,7 @@ final class AppModel: ObservableObject {
 
     func openOverflowStrip() {
         guard menuBarHideEnabled else { return }
+        mainStatusItemHidden = isMainStatusItemHidden?() == true
         overflowStripOpen = true
         overflowScanned = false
         scanOverflow()
@@ -1162,11 +1164,18 @@ final class AppModel: ObservableObject {
         overflowScanned = false
     }
 
-    /// Yeobun first when our own icon is off the bar, so the chevron still opens the panel.
     private func prefixedOverflow(_ items: [OverflowItem]) -> [OverflowItem] {
-        let rest = items.filter { !$0.opensYeobun }
-        guard isMainStatusItemHidden?() == true else { return rest }
-        return [OverflowItem.yeobunPanel()] + rest
+        items.filter { !$0.opensYeobun }
+    }
+
+    /// Put the wrench back on the menu bar. The strip drops its restore control.
+    func restoreMenuBarIcon() {
+        restoreMainStatusItem?()
+        mainStatusItemHidden = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.mainStatusItemHidden = self.isMainStatusItemHidden?() == true
+        }
     }
 
     /// Press the real item. Falls back to bringing its app forward.
@@ -1186,15 +1195,6 @@ final class AppModel: ObservableObject {
         MenuBarOverflowResolver.requestScreenRecording()
         MenuBarOverflowResolver.openScreenRecordingSettings()
         screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
-    }
-
-    /// Called by the status items after they measure themselves.
-    func noteMenuBarLayout(valid: Bool) {
-        let notice = valid ? nil : "⌘-drag the chevron to the right of the hidden icons"
-        if notice != menuBarNotice {
-            menuBarNotice = notice
-        }
-        updateMenuBarStatus()
     }
 
     func requestOpenPanel(from view: NSView? = nil) {
@@ -1220,10 +1220,8 @@ final class AppModel: ObservableObject {
     private func updateMenuBarStatus() {
         if !menuBarHideEnabled {
             menuBarStatus = "Icons stay in the menu bar"
-        } else if menuBarNotice != nil {
-            menuBarStatus = "Chevron is on the wrong side"
         } else {
-            menuBarStatus = "Hidden icons sit left of the chevron"
+            menuBarStatus = "Removed icons open from the chevron"
         }
     }
 

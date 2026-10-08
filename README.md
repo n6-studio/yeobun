@@ -122,13 +122,11 @@ Lid awake is the closed-lid case. Keep awake only blocks idle sleep while the li
 </tr>
 </table>
 
-A **chevron** in the menu bar that opens hidden icons, in the spirit of [Ice](https://github.com/jordanbaird/Ice)'s Ice Bar. Click it and a small panel lists status items that are off screen or that their app removed from the bar (⌘-dragged out, or hidden in the app's settings). If Yeobun's own icon is among them, it is the first tile and opens the panel. Click or right-click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app and closes the strip. Dismissing that menu without choosing leaves the strip open. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it.
+A **chevron** in the menu bar that opens hidden icons. Click it and a small panel lists status items that are off the bar (⌘-dragged out, or hidden in the app's settings). Click or right-click a tile and the item's own menu pops up right there; choosing an entry runs it in the real app and closes the strip. Dismissing that menu without choosing leaves the strip open. Items without a menu are pressed directly. Click the chevron again, or anywhere else, to close it. At the bottom of the strip, an info icon explains how to allow a missing app in Menu Bar settings, and the Terminal commands that put the icon back when that switch is not enough. A gear opens those settings. When Yeobun’s own wrench is hidden, its mark sits there too and puts it back on the bar.
 
-⌘-drag icons to the left of the chevron and they leave the bar; they stay one chevron click away. **Layout** is a grid or a vertical list. **Icon size** and **Name size** set how those tiles draw.
+⌘-drag an icon out of the menu bar and it leaves. Click the chevron and it is listed there, along with icons an app hid itself. **Layout** is a grid or a vertical list. **Icon size** and **Name size** set how those tiles draw.
 
-Finding the icons needs **Accessibility**: on macOS 26 off-screen items are not in the window list, so Yeobun asks each app for its own menu bar extras. **Screen Recording** is optional and draws each app's real icon instead of a generic one.
-
-If the chevron ends up on the wrong side of the hidden icons, they stay shown and the row tells you to ⌘-drag it back to the right.
+Finding the icons needs **Accessibility**. On macOS 26 and earlier, **Screen Recording** draws each icon from its own window. On macOS 27 the menu bar is one window and a removed icon is not in it, so the tile shows the app icon.
 
 ### Voice typing
 
@@ -141,11 +139,11 @@ If the chevron ends up on the wrong side of the hidden icons, they stay shown an
 
 Turn the tool on, then press **⌃⌥V** in any app and start talking. The row is the master switch: while it is off the shortcut is not registered and nothing can listen. **Listening** is a separate switch that only works while the tool is on. Yeobun turns speech into text **on this Mac** and types it where your cursor is while you are still talking. When the recognizer changes its mind about a word, Yeobun backspaces over it and types the correction. Press the shortcut again to stop, or leave a pause and it stops on its own (**Stop after silence**, 15 seconds to 1 minute, or never). The row reads **Listening** during a session, the right-click menu gains Start and Stop Listening, and the words also collect in the panel with **Copy** and **Clear**.
 
-**Language** defaults to the system language. On macOS 26 Yeobun uses the same on-device model as system dictation and downloads a language the first time you pick it. On macOS 14 and 15 it uses the older on-device recognizer, which needs the language downloaded under System Settings › Keyboard › Dictation. Nothing is sent to a server.
+**Language** defaults to the system language. On macOS 26 and later Yeobun uses the on-device speech transcriber and downloads a language the first time you pick it. On macOS 14 and 15 it uses the older on-device recognizer, which needs the language downloaded under System Settings › Keyboard › Dictation. Nothing is sent to a server.
 
 Click **Shortcut** to record a different key combination. **Type into the front app** off keeps the words in the panel only.
 
-**Vocabulary** is for the names and technical terms it keeps getting wrong. Add a term spelled the way you want it written, such as `PostHog`. The recognizer takes the list as a hint, which is enough for words it half knows, and the term always comes out with your spelling and capitals. For words it has never seen, fill in **Sounds like** with what it writes instead today, separated by commas: `kubectl` with `cube control, cube cuddle`. Those are rewritten to the term, as whole words only, while you talk. Up to 100 terms, shared by every language, and changes apply to a session that is already listening.
+**Vocabulary** rewrites words after they are recognized. Add a term spelled the way you want it written, such as `PostHog`, and fill in **Sounds like** with what the transcriber writes instead, separated by commas: `kubectl` with `cube control, cube cuddle`. Those are rewritten to the term, as whole words only, while you talk. Up to 100 terms, shared by every language, and changes apply to a session that is already listening.
 
 Needs **Microphone**. Typing into other apps needs **Accessibility**, the same permission as Scroll reverse; without it the transcript still shows in the panel. Text goes in as key presses, so the clipboard is left alone. Keep the cursor where it is until a phrase settles, because corrections backspace from there.
 
@@ -178,7 +176,7 @@ Informational only. Pin CPU, memory, storage, network, power, or battery from Ma
 
 - **Mac** — a home row. CPU, memory, and power, plus storage for the boot volume and other disks. Pin any of those to Home.
 - **Remote** — SSH hosts you add. Pick an icon so the row and any pinned stat are easy to tell from this Mac. Detail adds CPU, RAM, power, disk, load, uptime, and top processes. Linux only. Uses `/usr/bin/ssh` with your keys or ssh-agent (no passwords). Host can be an `~/.ssh/config` alias.
-- **Battery** — charge, time remaining, power, health, and cycle count. Bluetooth accessories when macOS reports a percentage. Pin charge to Home if you want it in the boxes.
+- **Battery** — charge, Low Power Mode, time remaining, power, health, and cycle count. Bluetooth accessories when macOS reports a percentage. Pin charge to Home if you want it in the boxes. Low Power Mode is not pinnable.
 - **Network** — link type, Wi-Fi name when macOS allows it, local IP, live down/up.
 - **Storage** — used and free space on the boot volume, plus other mounted disks.
 
