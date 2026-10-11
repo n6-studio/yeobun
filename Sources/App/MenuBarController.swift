@@ -586,6 +586,7 @@ extension MenuBarController: NSPopoverDelegate {
     func popoverWillShow(_ notification: Notification) {
         presentation.menuDidOpen()
         model.startStats()
+        model.refreshUpdateIfNeeded()
     }
 
     func popoverDidClose(_ notification: Notification) {

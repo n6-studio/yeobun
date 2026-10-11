@@ -312,6 +312,7 @@ struct ChromeButton: View {
     let systemName: String
     let label: String
     var opticalNudge: CGSize = .zero
+    var showsBadge = false
     let action: () -> Void
 
     var body: some View {
@@ -322,9 +323,19 @@ struct ChromeButton: View {
                 .foregroundStyle(.primary)
                 .frame(width: Radius.chrome, height: Radius.chrome)
                 .background(ModuleColor.offFill, in: Circle())
+                .overlay(alignment: .topTrailing) {
+                    if showsBadge {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 2, y: -2)
+                            .accessibilityHidden(true)
+                    }
+                }
         }
         .buttonStyle(PressScaleButtonStyle())
-        .accessibilityLabel(label)
+        .help(showsBadge ? "Update available" : label)
+        .accessibilityLabel(showsBadge ? "\(label), update available" : label)
     }
 }
 

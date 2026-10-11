@@ -57,15 +57,17 @@ struct ToolsPanel: View {
                     ChromeButton(systemName: "pencil", label: "Edit Home") {
                         presentation.isEditingHome = true
                     }
-                    ChromeButton(systemName: "gearshape", label: "Settings") {
-                        presentation.open(.settings)
-                    }
+                    settingsButton
                 }
             } else if presentation.route != .settings {
-                ChromeButton(systemName: "gearshape", label: "Settings") {
-                    presentation.open(.settings)
-                }
+                settingsButton
             }
+        }
+    }
+
+    private var settingsButton: some View {
+        ChromeButton(systemName: "gearshape", label: "Settings", showsBadge: model.newerVersion != nil) {
+            presentation.open(.settings)
         }
     }
 
@@ -1412,26 +1414,34 @@ private struct SettingsDetail: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 8)
-                    if model.updateCheckBusy {
+                    if model.updateCheckBusy || model.updateInstallBusy {
                         ProgressView()
                             .controlSize(.small)
-                            .accessibilityLabel("Checking for updates")
+                            .accessibilityLabel(model.updateInstallBusy ? "Installing update" : "Checking for updates")
                     }
                     Button("Check") {
                         model.checkLatestVersion()
                     }
                     .controlSize(.small)
-                    .disabled(model.updateCheckBusy)
+                    .disabled(model.updateCheckBusy || model.updateInstallBusy)
                     .accessibilityLabel("Check latest version")
                     if model.newerVersion != nil {
-                        Button("View release") {
-                            model.openLatestRelease()
+                        Button("Update") {
+                            model.installUpdate()
                         }
                         .controlSize(.small)
-                        .accessibilityLabel("View latest release")
+                        .disabled(model.updateCheckBusy || model.updateInstallBusy)
+                        .accessibilityLabel("Update Yeobun")
                     }
                 }
                 .stagger(index: 6, generation: presentation.generation)
+
+                if let newer = model.newerVersion {
+                    Text("\(newer) is available")
+                        .font(.system(size: 11))
+                        .foregroundStyle(ModuleColor.usageCritical)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 if let notice = model.updateCheckNotice {
                     Text(notice)

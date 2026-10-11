@@ -144,6 +144,7 @@ final class AppModel: ObservableObject {
     @Published var statusCheckBusy = false
     @Published var updateCheckNotice: String?
     @Published var updateCheckBusy = false
+    @Published var updateInstallBusy = false
     @Published var newerVersion: String?
     @Published var keyboardBusy = false
     @Published var stats = SystemSample()
@@ -198,9 +199,11 @@ final class AppModel: ObservableObject {
     private let remoteStatsService = RemoteStatsService()
     private var wakeObserver: NSObjectProtocol?
     private var accessibilityTimer: Timer?
-    private var updateCheckTask: URLSessionDataTask?
+    private var updateCheckHandle: UpdateCheckHandle?
     private var updateCheckEpoch = 0
-    private var latestReleaseURL: URL?
+    private var updateInstalledViaBrew = false
+    private var lastUpdateInfoAt: Date?
+    private var lastUpdateRefreshAt: Date?
     private var stateObserver: NSObjectProtocol?
     private var suppressAwakeRestart = false
     private var suppressMenuBarPersist = false
@@ -911,6 +914,7 @@ final class AppModel: ObservableObject {
     }
 
     func start() {
+        consumeUpdateResult()
         refreshAccessibility()
         tools.keyboard.onTimerExpired = { [weak self] in
             DispatchQueue.main.async {
@@ -961,6 +965,7 @@ final class AppModel: ObservableObject {
             applyLaunchAtLogin()
         }
         syncStatsSampling()
+        refreshUpdateIfNeeded()
     }
 
     func stop() {
@@ -979,8 +984,8 @@ final class AppModel: ObservableObject {
         statsService.stop()
         remoteStatsService.stop()
         updateCheckEpoch += 1
-        updateCheckTask?.cancel()
-        updateCheckTask = nil
+        updateCheckHandle?.cancel()
+        updateCheckHandle = nil
         stopAwakeTick()
         // Leave keyboard mapping, lid sleep, caffeinate, and the scroll helper
         // running so CLI and a quit of the menu-bar app stay independent.
@@ -1483,42 +1488,106 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Quiet Homebrew check. A full `brew update` runs at launch and again after
+    /// six hours; opening the panel in between only re-reads the cask.
+    func refreshUpdateIfNeeded() {
+        guard updateCheckHandle == nil, !updateInstallBusy else { return }
+        let now = Date()
+        let needsRefresh = lastUpdateRefreshAt.map { now.timeIntervalSince($0) >= 6 * 60 * 60 } ?? true
+        let needsInfo = lastUpdateInfoAt.map { now.timeIntervalSince($0) >= 15 * 60 } ?? true
+        guard needsRefresh || needsInfo else { return }
+        beginUpdateCheck(refresh: needsRefresh, explicit: false)
+    }
+
     func checkLatestVersion() {
-        guard !updateCheckBusy else { return }
-        updateCheckBusy = true
-        updateCheckNotice = nil
-        newerVersion = nil
-        latestReleaseURL = nil
+        guard !updateCheckBusy, !updateInstallBusy else { return }
+        beginUpdateCheck(refresh: true, explicit: true)
+    }
+
+    func installUpdate() {
+        guard let version = newerVersion, !updateInstallBusy, !updateCheckBusy else { return }
+        do {
+            try UpdateCheckService.scheduleInstall(upgrade: updateInstalledViaBrew)
+        } catch {
+            updateCheckNotice = error.localizedDescription
+            return
+        }
+        updateInstallBusy = true
+        updateCheckNotice = "Installing \(version) with Homebrew. Yeobun will reopen."
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            NSApp.terminate(nil)
+        }
+    }
+
+    private func beginUpdateCheck(refresh: Bool, explicit: Bool) {
         updateCheckEpoch += 1
         let epoch = updateCheckEpoch
-        updateCheckTask?.cancel()
-        updateCheckTask = UpdateCheckService.fetchLatest { [weak self] result in
+        updateCheckHandle?.cancel()
+        if explicit {
+            updateCheckBusy = true
+            updateCheckNotice = nil
+        }
+        updateCheckHandle = UpdateCheckService.check(refresh: refresh) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self, epoch == self.updateCheckEpoch else { return }
-                self.updateCheckBusy = false
-                self.updateCheckTask = nil
                 switch result {
-                case .success(let release):
-                    self.latestReleaseURL = release.pageURL
-                    switch UpdateCheckService.compare(latest: release.version, current: self.appVersion) {
-                    case .orderedDescending:
-                        self.newerVersion = release.version
-                        self.updateCheckNotice = "\(release.version) is available"
-                    case .orderedSame:
-                        self.updateCheckNotice = "Up to date"
-                    case .orderedAscending:
-                        self.updateCheckNotice = "This build is newer than the latest release"
+                case .success(let info):
+                    self.lastUpdateInfoAt = Date()
+                    if info.refreshed { self.lastUpdateRefreshAt = Date() }
+                    self.updateInstalledViaBrew = info.installed != nil
+                    self.applyUpdateComparison(latest: info.version, explicit: explicit, finished: info.finished)
+                    if info.finished {
+                        self.updateCheckHandle = nil
+                        self.updateCheckBusy = false
                     }
                 case .failure(let error):
-                    self.updateCheckNotice = error.localizedDescription
+                    self.updateCheckHandle = nil
+                    self.updateCheckBusy = false
+                    if explicit {
+                        self.updateCheckNotice = error.localizedDescription
+                    }
                 }
             }
         }
     }
 
-    func openLatestRelease() {
-        let url = latestReleaseURL ?? UpdateCheckService.releasesPageURL
-        NSWorkspace.shared.open(url)
+    private func applyUpdateComparison(latest: String, explicit: Bool, finished: Bool) {
+        switch UpdateCheckService.compare(latest: latest, current: appVersion) {
+        case .orderedDescending:
+            newerVersion = latest
+            if updateCheckNotice == "Up to date"
+                || updateCheckNotice == "This build is newer than Homebrew"
+                || updateCheckNotice == "Updated" {
+                updateCheckNotice = nil
+            }
+        case .orderedSame:
+            if finished {
+                newerVersion = nil
+                if explicit { updateCheckNotice = "Up to date" }
+            }
+        case .orderedAscending:
+            if finished {
+                newerVersion = nil
+                if explicit { updateCheckNotice = "This build is newer than Homebrew" }
+            }
+        }
+    }
+
+    private func consumeUpdateResult() {
+        let url = YeobunPaths.applicationSupport.appendingPathComponent("update-result.txt")
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return }
+        try? FileManager.default.removeItem(at: url)
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed == "ok" {
+            updateCheckNotice = "Updated"
+        } else if trimmed.hasPrefix("error ") {
+            var message = String(trimmed.dropFirst("error ".count)).trimmingCharacters(in: .whitespaces)
+            if message.count > 180 {
+                message = String(message.prefix(180))
+            }
+            updateCheckNotice = message.isEmpty ? "The Homebrew update failed." : message
+        }
     }
 
     private func restoreKeyboardIfNeeded() {
