@@ -2,40 +2,6 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Control Center's "Allow in the Menu Bar" list. Turning Yeobun off there
-/// hides the wrench and the chevron together.
-private enum MenuBarAllowance {
-    private static let bundleID = "studio.n6.yeobun"
-
-    static func isYeobunAllowed() -> Bool {
-        let url = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Group Containers/group.com.apple.controlcenter/Library/Preferences/group.com.apple.controlcenter.plist")
-        guard let data = try? Data(contentsOf: url),
-              let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
-              let tracked = root["trackedApplications"] as? Data,
-              let entries = try? PropertyListSerialization.propertyList(from: tracked, format: nil) as? [[String: Any]]
-        else { return true }
-        for entry in entries {
-            guard let allowed = entry["isAllowed"] as? Bool, mentionsYeobun(entry) else { continue }
-            return allowed
-        }
-        return true
-    }
-
-    private static func mentionsYeobun(_ value: Any) -> Bool {
-        switch value {
-        case let text as String:
-            return text == bundleID
-        case let list as [Any]:
-            return list.contains { mentionsYeobun($0) }
-        case let record as [String: Any]:
-            return record.values.contains { mentionsYeobun($0) }
-        default:
-            return false
-        }
-    }
-}
-
 final class MenuBarController: NSObject {
     private var statusItem: NSStatusItem
     private let popover = NSPopover()

@@ -159,10 +159,14 @@ enum MenuBarOverflowResolver {
             }
         }
         var items: [OverflowItem] = []
+        let disallowed = MenuBarAllowance.disallowed()
         for extra in extrasByApp() {
             // Re-read after any reflow. A frame captured earlier can sit on a neighbor.
             guard let frame = frame(of: extra.element) else { continue }
-            let placement = MenuBarOverflow.placement(of: frame)
+            var placement = MenuBarOverflow.placement(of: frame)
+            // Allow in the Menu Bar off: macOS 27 stops drawing the item but can
+            // leave its last frame on the bar.
+            if placement == .visible, disallowed.contains(extra.app) { placement = .removed }
             guard placement != .visible else { continue }
             let window = foreign.first { $0.bounds.intersects(frame.insetBy(dx: 2, dy: 2)) }
             items.append(OverflowItem(
@@ -217,6 +221,8 @@ enum MenuBarOverflowResolver {
     /// Synthesize a click at the item's current frame, when that frame is in
     /// the menu bar. Used after temporarily showing a hidden item.
     static func click(_ item: OverflowItem, right: Bool) -> Bool {
+        // A disallowed item can still report a frame on the bar. Clicking there hits a neighbor.
+        guard item.placement != .removed else { return false }
         guard let element = item.element, let frame = frame(of: element) else { return false }
         guard MenuBarOverflow.placement(of: frame) == .visible else { return false }
         let point = CGPoint(x: frame.midX, y: frame.midY)
