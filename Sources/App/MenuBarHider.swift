@@ -229,6 +229,9 @@ final class MenuBarHider {
             onOpenMenuBarSettings: {
                 MenuBarOverflowResolver.openMenuBarSettings()
             },
+            onRefresh: { [weak model] in
+                model?.refreshOverflowStrip()
+            },
             anchor: anchor
         )
     }

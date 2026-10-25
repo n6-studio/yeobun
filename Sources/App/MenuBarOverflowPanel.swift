@@ -500,6 +500,7 @@ private struct StripSnapshot {
     var yeobunHidden: Bool
     var onShowYeobun: () -> Void
     var onOpenMenuBarSettings: () -> Void
+    var onRefresh: () -> Void
     var anchor: NSRect
 }
 
@@ -539,6 +540,7 @@ final class MenuBarOverflowPanel {
         yeobunHidden: Bool,
         onShowYeobun: @escaping () -> Void,
         onOpenMenuBarSettings: @escaping () -> Void,
+        onRefresh: @escaping () -> Void,
         anchor: NSRect
     ) {
         snapshot = StripSnapshot(
@@ -550,6 +552,7 @@ final class MenuBarOverflowPanel {
             yeobunHidden: yeobunHidden,
             onShowYeobun: onShowYeobun,
             onOpenMenuBarSettings: onOpenMenuBarSettings,
+            onRefresh: onRefresh,
             anchor: anchor
         )
         install()
@@ -577,6 +580,7 @@ final class MenuBarOverflowPanel {
             yeobunHidden: snapshot.yeobunHidden,
             onShowYeobun: snapshot.onShowYeobun,
             onOpenMenuBarSettings: snapshot.onOpenMenuBarSettings,
+            onRefresh: snapshot.onRefresh,
             onShowMissingAppHelp: { [weak self] in
                 self?.toggleHelp()
             },

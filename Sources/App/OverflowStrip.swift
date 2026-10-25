@@ -22,6 +22,7 @@ struct OverflowStrip: View {
     var yeobunHidden = false
     var onShowYeobun: () -> Void = {}
     var onOpenMenuBarSettings: () -> Void = {}
+    var onRefresh: () -> Void = {}
     var onShowMissingAppHelp: () -> Void = {}
     var onInfoAnchor: (NSView) -> Void = { _ in }
     let onClick: (OverflowItem, OverflowClick) -> Void
@@ -151,6 +152,8 @@ struct OverflowStrip: View {
                 .accessibilityLabel("Show Yeobun")
                 .help("Show Yeobun")
             }
+            ChromeButton(systemName: "arrow.clockwise", label: "Refresh hidden icons", action: onRefresh)
+                .help("Refresh hidden icons")
             ChromeButton(systemName: "gearshape", label: "Menu Bar settings", action: onOpenMenuBarSettings)
                 .help("Menu Bar settings")
             ChromeButton(systemName: "info", label: "Missing an app", action: onShowMissingAppHelp)

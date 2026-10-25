@@ -1139,6 +1139,14 @@ final class AppModel: ObservableObject {
         clearOverflow()
     }
 
+    /// Rescan while the strip stays open, so an icon hidden since it opened shows up.
+    func refreshOverflowStrip() {
+        guard menuBarHideEnabled, overflowStripOpen else { return }
+        refreshAccessibility()
+        mainStatusItemHidden = isMainStatusItemHidden?() == true
+        scanOverflow()
+    }
+
     func scanOverflow() {
         guard menuBarHideEnabled, overflowStripOpen else { return }
         overflowEpoch += 1
