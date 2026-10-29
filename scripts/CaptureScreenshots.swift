@@ -303,6 +303,7 @@ private func write(
     let canvas = ShotCanvas {
         ToolsPanel()
             .environmentObject(model)
+            .environmentObject(model.liveStats)
             .environmentObject(presentation)
     }
     .environment(\.colorScheme, scheme)

@@ -12,6 +12,7 @@ final class RemoteStatsService {
     private var samples: [UUID: RemoteSample] = [:]
     private var inflight = Set<UUID>()
     private let queue = DispatchQueue(label: "studio.n6.yeobun.remote-stats", qos: .utility)
+    private let pollQueue = DispatchQueue(label: "studio.n6.yeobun.remote-poll", qos: .utility, attributes: .concurrent)
     private let stateLock = NSLock()
     private var generation = 0
 
@@ -48,15 +49,13 @@ final class RemoteStatsService {
         queue.async { [weak self] in
             guard let self else { return }
             self.stopTimer()
-            let snapshot = self.servers
             self.previous = [:]
             self.history = [:]
             self.samples = [:]
             self.inflight = []
             self.servers = []
-            for server in snapshot {
-                RemoteProbe.exitMaster(for: server)
-            }
+            // Leave SSH masters to ControlPersist. Closing the panel should
+            // not pay a handshake the next time it opens.
         }
     }
 
@@ -64,34 +63,56 @@ final class RemoteStatsService {
         queue.async { [weak self] in
             guard let self else { return }
             let keep = Set(servers.map(\.id))
+            let removed = self.servers.filter { !keep.contains($0.id) }
             self.servers = servers
             self.previous = self.previous.filter { keep.contains($0.key) }
             self.history = self.history.filter { keep.contains($0.key) }
             self.samples = self.samples.filter { keep.contains($0.key) }
+            self.inflight = self.inflight.filter { keep.contains($0) }
             self.publish()
+            if !removed.isEmpty {
+                self.pollQueue.async {
+                    for server in removed {
+                        RemoteProbe.exitMaster(for: server)
+                    }
+                }
+            }
         }
     }
 
+    /// Each host runs on its own queue so a slow SSH session cannot stall the others.
     private func poll(generation: Int) {
-        let snapshot = servers
-        for server in snapshot {
-            guard isCurrent(generation) else { return }
-            guard inflight.insert(server.id).inserted else { continue }
+        let pending = servers.filter { inflight.insert($0.id).inserted }
+        guard !pending.isEmpty else { return }
+        let group = DispatchGroup()
+        for server in pending {
             let previous = previous[server.id]
             let history = history[server.id] ?? []
-            let result = RemoteProbe.tick(server, previous: previous, history: history)
-            inflight.remove(server.id)
-            guard isCurrent(generation) else { return }
-            if let raw = result.raw {
-                self.previous[server.id] = raw
+            group.enter()
+            pollQueue.async { [weak self] in
+                let result = RemoteProbe.tick(server, previous: previous, history: history)
+                guard let self else {
+                    group.leave()
+                    return
+                }
+                self.queue.async {
+                    defer { group.leave() }
+                    self.inflight.remove(server.id)
+                    guard self.isCurrent(generation) else { return }
+                    if let raw = result.raw {
+                        self.previous[server.id] = raw
+                    }
+                    if result.sample.cpuReady {
+                        self.history[server.id] = result.sample.cpuHistory
+                    }
+                    self.samples[server.id] = result.sample
+                }
             }
-            if result.sample.cpuReady {
-                self.history[server.id] = result.sample.cpuHistory
-            }
-            samples[server.id] = result.sample
         }
-        guard isCurrent(generation) else { return }
-        publish()
+        group.notify(queue: queue) { [weak self] in
+            guard let self, self.isCurrent(generation) else { return }
+            self.publish()
+        }
     }
 
     private func publish() {

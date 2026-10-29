@@ -9,6 +9,7 @@ enum HomeMetrics {
 
 struct HomeList: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
 
     @State private var dragging: HomeItem?
@@ -17,6 +18,8 @@ struct HomeList: View {
     @State private var dragGrab: CGFloat = 0
 
     var body: some View {
+        let _ = liveStats.sample
+        let _ = liveStats.remoteSamples
         ScrollView(.vertical) {
             stack
         }
@@ -70,7 +73,12 @@ struct HomeList: View {
         VStack(spacing: HomeMetrics.gap) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, tool in
                 row(tool)
-                    .stagger(index: index, generation: presentation.generation)
+                    .stagger(
+                        index: index,
+                        generation: presentation.generation,
+                        pace: Motion.homeStagger,
+                        animation: Motion.homeEnter
+                    )
             }
         }
         .coordinateSpace(name: "homeList")
@@ -257,11 +265,14 @@ struct HomeList: View {
 
 struct PinStrip: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
     var editing: Bool
 
     private var cells: [PinDisplay] {
-        model.pins.compactMap { model.pinDisplay($0) }
+        let _ = liveStats.sample
+        let _ = liveStats.remoteSamples
+        return model.pins.compactMap { model.pinDisplay($0) }
     }
 
     var body: some View {

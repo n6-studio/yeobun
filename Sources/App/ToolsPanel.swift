@@ -12,12 +12,23 @@ struct ToolsPanel: View {
                 .animation(reduceMotion ? nil : Motion.enter, value: presentation.isEditingHome)
             screen
                 .id(presentation.route)
-                .transition(.opacity.combined(with: .offset(y: reduceMotion ? 0 : Motion.enterOffset)))
+                .transition(routeTransition)
         }
-        .animation(reduceMotion ? nil : Motion.enter, value: presentation.route)
+        .animation(routeAnimation, value: presentation.route)
         .padding(Radius.panelPadding)
         .frame(width: Radius.panelWidth)
         .background(.regularMaterial)
+    }
+
+    private var routeAnimation: Animation? {
+        if reduceMotion || presentation.route.isSettings { return nil }
+        if presentation.route == .home { return Motion.homeEnter }
+        return Motion.enter
+    }
+
+    private var routeTransition: AnyTransition {
+        if reduceMotion || presentation.route.isSettings { return .identity }
+        return .opacity.combined(with: .offset(y: Motion.enterOffset))
     }
 
     private var header: some View {
@@ -59,7 +70,7 @@ struct ToolsPanel: View {
                     }
                     settingsButton
                 }
-            } else if presentation.route != .settings {
+            } else if !presentation.route.isSettings {
                 settingsButton
             }
         }
@@ -107,7 +118,13 @@ struct ToolsPanel: View {
         case .remote(let id):
             RemoteDetail(id: id)
         case .settings:
-            SettingsDetail()
+            SettingsIndex()
+        case .settingsGeneral:
+            SettingsGeneralPage()
+        case .settingsMenuBar:
+            SettingsMenuBarPage()
+        case .settingsRemotes:
+            SettingsRemotesPage()
         }
     }
 }
@@ -364,6 +381,35 @@ private struct AwakeDetail: View {
 
             AwakeDurationChips(minutes: $model.awakeMinutes, choices: model.awakeDurationChoices)
                 .stagger(index: 1, generation: presentation.generation)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("After it ends")
+                    .font(.system(size: 13))
+                HStack(spacing: 8) {
+                    Picker("After it ends", selection: $model.awakeResume) {
+                        ForEach(AwakeResume.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    if model.awakeResume == .preferred {
+                        Picker("Always set back to", selection: $model.awakePreferredMinutes) {
+                            ForEach(model.awakeDurationChoices, id: \.self) { minutes in
+                                Text(AppModel.awakeDurationLabel(minutes)).tag(minutes)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .stagger(index: 2, generation: presentation.generation)
 
             if let error = model.awakeError {
                 Text(error)
@@ -808,9 +854,11 @@ private struct VoiceDetail: View {
 
 private struct MachineDetail: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
 
     var body: some View {
+        let _ = liveStats.sample
         VStack(alignment: .leading, spacing: 10) {
             GroupedPanel {
                 MeterRow(
@@ -885,10 +933,14 @@ private struct MachineDetail: View {
 private struct RemoteDetail: View {
     let id: UUID
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
     @State private var powerHelp = false
 
-    private var sample: RemoteSample { model.remoteSample(id) }
+    private var sample: RemoteSample {
+        let _ = liveStats.remoteSamples
+        return model.remoteSample(id)
+    }
     private var server: RemoteServer? { model.remote(for: id) }
 
     var body: some View {
@@ -1073,9 +1125,11 @@ private struct RemotePowerHelp: View {
 
 private struct BatteryDetail: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
 
     var body: some View {
+        let _ = liveStats.sample
         VStack(alignment: .leading, spacing: 10) {
             GroupedPanel {
                 if let battery = model.stats.battery {
@@ -1136,9 +1190,11 @@ private struct BatteryDetail: View {
 
 private struct NetworkDetail: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
 
     var body: some View {
+        let _ = liveStats.sample
         GroupedPanel {
             StatRow(label: "Link", value: model.stats.network.connected ? model.stats.network.kind : "Offline")
                 .stagger(index: 0, generation: presentation.generation)
@@ -1221,9 +1277,11 @@ private struct StorageOnMac: View {
 
 private struct StorageDetail: View {
     @EnvironmentObject private var model: AppModel
+    @EnvironmentObject private var liveStats: LiveStats
     @EnvironmentObject private var presentation: PanelPresentation
 
     var body: some View {
+        let _ = liveStats.sample
         let volumes = model.stats.volumes.isEmpty
             ? model.stats.bootVolume.map { [$0] } ?? []
             : model.stats.volumes
@@ -1248,15 +1306,124 @@ private struct StorageDetail: View {
     }
 }
 
-private struct SettingsDetail: View {
+private struct SettingsIndex: View {
     @EnvironmentObject private var model: AppModel
     @EnvironmentObject private var presentation: PanelPresentation
-    @State private var remoteName = ""
-    @State private var remoteHost = ""
-    @State private var remoteUser = ""
-    @State private var remotePort = ""
-    @State private var remoteIdentity = ""
-    @State private var editingRemoteID: UUID?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingsCard(systemName: "slider.horizontal.3", title: "General", subtitle: "Login and status") {
+                presentation.open(.settingsGeneral)
+            }
+            SettingsCard(systemName: "menubar.rectangle", title: "Menu bar", subtitle: "Tools and the glance") {
+                presentation.open(.settingsMenuBar)
+            }
+            SettingsCard(systemName: "server.rack", title: "Remote servers", subtitle: remoteSubtitle) {
+                presentation.open(.settingsRemotes)
+            }
+
+            VersionCard()
+                .padding(.top, 6)
+
+            SettingsCard(systemName: "power", title: "Quit Yeobun", showsChevron: false, destructive: true) {
+                model.quit()
+            }
+
+            createdBy
+                .padding(.top, 10)
+        }
+    }
+
+    private var remoteSubtitle: String {
+        switch model.remotes.count {
+        case 0: "None saved"
+        case 1: "1 server"
+        default: "\(model.remotes.count) servers"
+        }
+    }
+
+    private var createdBy: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            Text("Created by")
+            Button {
+                NSWorkspace.shared.open(Brand.studioURL)
+            } label: {
+                Text(Brand.studio)
+                    .underline()
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens n6.studio")
+            Text("with")
+            Image(systemName: "heart.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(.pink)
+                .accessibilityHidden(true)
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.secondary)
+    }
+}
+
+private struct VersionCard: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Version")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(model.newerVersion.map { "\($0) is available" } ?? model.appVersion)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(model.newerVersion == nil ? .secondary : ModuleColor.usageCritical)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                if model.updateCheckBusy || model.updateInstallBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel(model.updateInstallBusy ? "Installing update" : "Checking for updates")
+                }
+                if model.newerVersion != nil {
+                    Button("Update") {
+                        model.installUpdate()
+                    }
+                    .controlSize(.small)
+                    .disabled(model.updateCheckBusy || model.updateInstallBusy)
+                    .accessibilityLabel("Update Yeobun")
+                } else {
+                    Button("Check") {
+                        model.checkLatestVersion()
+                    }
+                    .controlSize(.small)
+                    .disabled(model.updateCheckBusy || model.updateInstallBusy)
+                    .accessibilityLabel("Check latest version")
+                }
+            }
+            if let notice = model.updateCheckNotice {
+                Text(notice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovering ? ModuleColor.offFillHover : ModuleColor.offFill, in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+        .background { CardHover { hovering = $0 }.allowsHitTesting(false) }
+    }
+}
+
+private struct SettingsGeneralPage: View {
+    @EnvironmentObject private var model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1275,101 +1442,11 @@ private struct SettingsDetail: View {
                         .controlSize(.small)
                         .labelsHidden()
                 }
-                .stagger(index: 0, generation: presentation.generation)
-
                 if let notice = model.loginItemNotice {
                     Text(notice)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            GroupedPanel {
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Menu bar")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("Show which tools are on")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Picker("Menu bar", selection: $model.menuBarDisplay) {
-                        ForEach(MenuBarDisplay.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                }
-                .stagger(index: 1, generation: presentation.generation)
-
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Menu bar stats")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text("One stat beside the logo. Home shows the glance.")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Picker("Menu bar stats", selection: $model.menuBarStats) {
-                        ForEach(MenuBarStats.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                }
-                .stagger(index: 2, generation: presentation.generation)
-            }
-
-            GroupedPanel {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Remote servers")
-                        .font(.system(size: 13, weight: .semibold))
-                    remoteField("Name, optional", text: $remoteName)
-                    remoteField("Host or SSH alias", text: $remoteHost)
-                    HStack(spacing: 6) {
-                        remoteField("User, optional", text: $remoteUser)
-                        remoteField("Port", text: $remotePort)
-                    }
-                    remoteField("Identity file, optional", text: $remoteIdentity)
-                    HStack {
-                        Spacer(minLength: 0)
-                        if editingRemoteID != nil {
-                            Button("Cancel") {
-                                clearRemoteForm()
-                            }
-                            .controlSize(.small)
-                        }
-                        Button(editingRemoteID == nil ? "Add" : "Save") {
-                            commitRemote()
-                        }
-                        .controlSize(.small)
-                        .disabled(remoteHost.trimmingCharacters(in: .whitespaces).isEmpty)
-                        .accessibilityLabel(editingRemoteID == nil ? "Add remote server" : "Save remote server")
-                    }
-                    if let notice = model.remoteAddNotice {
-                        Text(notice)
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .stagger(index: 3, generation: presentation.generation)
-
-                if !model.remotes.isEmpty {
-                    Divider()
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForEach(model.remotes) { server in
-                            remoteRow(server)
-                        }
-                    }
-                    .stagger(index: 4, generation: presentation.generation)
                 }
             }
 
@@ -1394,8 +1471,6 @@ private struct SettingsDetail: View {
                     .controlSize(.small)
                     .disabled(model.statusCheckBusy || model.keyboardBusy || model.lidBusy)
                 }
-                .stagger(index: 5, generation: presentation.generation)
-
                 if let notice = model.statusCheckNotice {
                     Text(notice)
                         .font(.system(size: 11))
@@ -1403,47 +1478,228 @@ private struct SettingsDetail: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+        }
+    }
+}
 
-            GroupedPanel {
-                HStack {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Version")
-                            .font(.system(size: 13, weight: .semibold))
-                        Text(model.appVersion)
-                            .font(.system(size: 11).monospacedDigit())
+private struct SettingsMenuBarPage: View {
+    @EnvironmentObject private var model: AppModel
+
+    var body: some View {
+        GroupedPanel {
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Menu bar")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Show which tools are on")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Picker("Menu bar", selection: $model.menuBarDisplay) {
+                    ForEach(MenuBarDisplay.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+            }
+
+            HStack {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Menu bar stats")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("One stat beside the logo. Home shows the glance.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                Picker("Menu bar stats", selection: $model.menuBarStats) {
+                    ForEach(MenuBarStats.allCases) { mode in
+                        Text(mode.title).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+            }
+        }
+    }
+}
+
+private struct SettingsCard: View {
+    let systemName: String
+    let title: String
+    var subtitle: String? = nil
+    var showsChevron = true
+    var destructive = false
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: systemName)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(iconColor)
+                    .frame(width: 22, height: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(labelColor)
+                        .lineLimit(1)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 11))
                             .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-                    Spacer(minLength: 8)
-                    if model.updateCheckBusy || model.updateInstallBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                            .accessibilityLabel(model.updateInstallBusy ? "Installing update" : "Checking for updates")
-                    }
-                    Button("Check") {
-                        model.checkLatestVersion()
+                }
+                Spacer(minLength: 8)
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 52, maxHeight: 52, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+            .background(fill, in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+        }
+        .buttonStyle(PressScaleButtonStyle())
+        .background { CardHover { hovering = $0 }.allowsHitTesting(false) }
+        .accessibilityLabel(subtitle.map { "\(title), \($0)" } ?? title)
+    }
+
+    private var labelColor: Color {
+        if destructive { return hovering ? .red : .secondary }
+        return .primary
+    }
+
+    private var iconColor: Color {
+        if destructive, hovering { return .red }
+        return .secondary
+    }
+
+    private var fill: Color {
+        if destructive, hovering { return Color.red.opacity(0.16) }
+        return hovering ? ModuleColor.offFillHover : ModuleColor.offFill
+    }
+}
+
+/// AppKit tracking rect for one card. SwiftUI's hover rect stays on the previous
+/// page after the panel changes height, so the highlight lands on another row.
+private struct CardHover: NSViewRepresentable {
+    let onChange: (Bool) -> Void
+
+    func makeNSView(context: Context) -> CardHoverView {
+        let view = CardHoverView()
+        view.onChange = onChange
+        return view
+    }
+
+    func updateNSView(_ view: CardHoverView, context: Context) {
+        view.onChange = onChange
+    }
+}
+
+private final class CardHoverView: NSView {
+    var onChange: (Bool) -> Void = { _ in }
+    private var inside = false
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas {
+            removeTrackingArea(area)
+        }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil else {
+            setInside(false)
+            return
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.syncToPointer()
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setInside(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setInside(false)
+    }
+
+    private func syncToPointer() {
+        guard let window else {
+            setInside(false)
+            return
+        }
+        let point = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        setInside(bounds.contains(point))
+    }
+
+    private func setInside(_ next: Bool) {
+        guard inside != next else { return }
+        inside = next
+        onChange(next)
+    }
+}
+
+private struct SettingsRemotesPage: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var remoteName = ""
+    @State private var remoteHost = ""
+    @State private var remoteUser = ""
+    @State private var remotePort = ""
+    @State private var remoteIdentity = ""
+    @State private var editingRemoteID: UUID?
+    @State private var editName = ""
+    @State private var editHost = ""
+    @State private var editUser = ""
+    @State private var editPort = ""
+    @State private var editIdentity = ""
+    @State private var editNotice: String?
+
+    var body: some View {
+        GroupedPanel {
+            VStack(alignment: .leading, spacing: 8) {
+                remoteField("Name, optional", text: $remoteName, onSubmit: addRemote)
+                remoteField("Host or SSH alias", text: $remoteHost, onSubmit: addRemote)
+                HStack(spacing: 6) {
+                    remoteField("User, optional", text: $remoteUser, onSubmit: addRemote)
+                    remoteField("Port", text: $remotePort, onSubmit: addRemote)
+                }
+                remoteField("Identity file, optional", text: $remoteIdentity, onSubmit: addRemote)
+                HStack {
+                    Spacer(minLength: 0)
+                    Button("Add") {
+                        addRemote()
                     }
                     .controlSize(.small)
-                    .disabled(model.updateCheckBusy || model.updateInstallBusy)
-                    .accessibilityLabel("Check latest version")
-                    if model.newerVersion != nil {
-                        Button("Update") {
-                            model.installUpdate()
-                        }
-                        .controlSize(.small)
-                        .disabled(model.updateCheckBusy || model.updateInstallBusy)
-                        .accessibilityLabel("Update Yeobun")
-                    }
+                    .disabled(remoteHost.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .accessibilityLabel("Add remote server")
                 }
-                .stagger(index: 6, generation: presentation.generation)
-
-                if let newer = model.newerVersion {
-                    Text("\(newer) is available")
-                        .font(.system(size: 11))
-                        .foregroundStyle(ModuleColor.usageCritical)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let notice = model.updateCheckNotice {
+                if let notice = model.remoteAddNotice {
                     Text(notice)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -1451,42 +1707,22 @@ private struct SettingsDetail: View {
                 }
             }
 
-            GroupedPanel {
-                HStack(spacing: 4) {
-                    Spacer(minLength: 0)
-                    Text("Created by")
-                    Button {
-                        NSWorkspace.shared.open(Brand.studioURL)
-                    } label: {
-                        Text(Brand.studio)
-                            .underline()
+                if !model.remotes.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(model.remotes) { server in
+                            remoteRow(server)
+                        }
                     }
-                    .buttonStyle(PressScaleButtonStyle())
-                    .accessibilityHint("Opens n6.studio")
-                    Text("with")
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.pink)
-                        .accessibilityHidden(true)
-                    Spacer(minLength: 0)
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
             }
-            .stagger(index: 7, generation: presentation.generation)
-
-            Button("Quit Yeobun") {
-                model.quit()
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.red)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 4)
-            .stagger(index: 8, generation: presentation.generation)
-        }
     }
 
-    private func remoteField(_ prompt: String, text: Binding<String>) -> some View {
+    private func remoteField(
+        _ prompt: String,
+        text: Binding<String>,
+        onSubmit: @escaping () -> Void
+    ) -> some View {
         TextField(prompt, text: text)
             .textFieldStyle(.plain)
             .font(.system(size: 12))
@@ -1496,10 +1732,20 @@ private struct SettingsDetail: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(ModuleColor.offFill)
             )
-            .onSubmit { commitRemote() }
+            .onSubmit(onSubmit)
     }
 
     private func remoteRow(_ server: RemoteServer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if editingRemoteID == server.id {
+                remoteEditor(server)
+            } else {
+                remoteSummary(server)
+            }
+        }
+    }
+
+    private func remoteSummary(_ server: RemoteServer) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
                 RemoteIconMenu(server: server)
@@ -1529,6 +1775,7 @@ private struct SettingsDetail: View {
                 .disabled(model.remoteTestingID != nil)
                 .accessibilityLabel("Test \(server.name)")
                 Button {
+                    if editingRemoteID == server.id { cancelEditing() }
                     model.removeRemote(server)
                 } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -1546,55 +1793,106 @@ private struct SettingsDetail: View {
         }
     }
 
-    private func beginEditing(_ server: RemoteServer) {
-        editingRemoteID = server.id
-        remoteName = server.name
-        remoteHost = server.host
-        remoteUser = server.user ?? ""
-        remotePort = server.port.map(String.init) ?? ""
-        remoteIdentity = server.identityPath ?? ""
-        model.remoteAddNotice = nil
+    /// Edit lives on the row. The add fields above stay empty.
+    private func remoteEditor(_ server: RemoteServer) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                RemoteIconMenu(server: server)
+                Text("Edit \(server.name)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button {
+                    model.removeRemote(server)
+                    cancelEditing()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(server.name)")
+            }
+            remoteField("Name, optional", text: $editName, onSubmit: saveEditing)
+            remoteField("Host or SSH alias", text: $editHost, onSubmit: saveEditing)
+            HStack(spacing: 6) {
+                remoteField("User, optional", text: $editUser, onSubmit: saveEditing)
+                remoteField("Port", text: $editPort, onSubmit: saveEditing)
+            }
+            remoteField("Identity file, optional", text: $editIdentity, onSubmit: saveEditing)
+            HStack {
+                Spacer(minLength: 0)
+                Button("Cancel") {
+                    cancelEditing()
+                }
+                .controlSize(.small)
+                Button("Save") {
+                    saveEditing()
+                }
+                .controlSize(.small)
+                .disabled(editHost.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityLabel("Save \(server.name)")
+            }
+            if let editNotice {
+                Text(editNotice)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
-    private func clearRemoteForm() {
+    private func beginEditing(_ server: RemoteServer) {
+        editingRemoteID = server.id
+        editName = server.name
+        editHost = server.host
+        editUser = server.user ?? ""
+        editPort = server.port.map(String.init) ?? ""
+        editIdentity = server.identityPath ?? ""
+        editNotice = nil
+    }
+
+    private func cancelEditing() {
         editingRemoteID = nil
+        editName = ""
+        editHost = ""
+        editUser = ""
+        editPort = ""
+        editIdentity = ""
+        editNotice = nil
+    }
+
+    private func saveEditing() {
+        guard let id = editingRemoteID else { return }
+        if let error = model.updateRemote(
+            id: id,
+            name: editName,
+            host: editHost,
+            user: editUser,
+            port: editPort,
+            identity: editIdentity
+        ) {
+            editNotice = error
+            return
+        }
+        cancelEditing()
+    }
+
+    private func addRemote() {
+        if let error = model.addRemote(
+            name: remoteName,
+            host: remoteHost,
+            user: remoteUser,
+            port: remotePort,
+            identity: remoteIdentity
+        ) {
+            model.remoteAddNotice = error
+            return
+        }
         remoteName = ""
         remoteHost = ""
         remoteUser = ""
         remotePort = ""
         remoteIdentity = ""
-        model.remoteAddNotice = nil
-    }
-
-    private func commitRemote() {
-        let error: String?
-        if let id = editingRemoteID {
-            error = model.updateRemote(
-                id: id,
-                name: remoteName,
-                host: remoteHost,
-                user: remoteUser,
-                port: remotePort,
-                identity: remoteIdentity
-            )
-        } else {
-            error = model.addRemote(
-                name: remoteName,
-                host: remoteHost,
-                user: remoteUser,
-                port: remotePort,
-                identity: remoteIdentity
-            )
-        }
-        if let error {
-            model.remoteAddNotice = error
-            return
-        }
-        clearRemoteForm()
-    }
-
-    private func addRemote() {
-        commitRemote()
     }
 }
 

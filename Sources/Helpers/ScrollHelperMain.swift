@@ -17,7 +17,7 @@ struct ScrollHelperMain {
             applyPolicy(mice: snapshot.mice)
         }
         applyPolicy(mice: DeviceMonitor.listMiceOnce())
-        devices.start()
+        devices.start(tracksActiveMouse: true)
 
         guard ScrollReverseService.shared.start() else {
             fputs("yeobun-scroll: Allow Yeobun in Accessibility.\n", stderr)

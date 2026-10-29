@@ -13,7 +13,20 @@ enum MenuBarAllowance {
     private static let bundleID = "studio.n6.yeobun"
 
     /// The last read used the saved copy. The live file was not readable.
-    static private(set) var usingSnapshot = false
+    static var usingSnapshot: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        refreshLocked()
+        return cachedUsingSnapshot
+    }
+
+    private static let lock = NSLock()
+    private static var cachedSignature = ""
+    private static var cachedEntries: [[String: Any]] = []
+    private static var cachedUsingSnapshot = false
+    private static var cachedAllowed = true
+    private static var cachedDisallowed = Disallowed()
+    private static var lastSnapshotHash: Int?
 
     /// Apps whose Allow in the Menu Bar switch is off.
     struct Disallowed {
@@ -29,19 +42,17 @@ enum MenuBarAllowance {
     }
 
     static func isYeobunAllowed() -> Bool {
-        for entry in entries() {
-            guard let allowed = entry["isAllowed"] as? Bool, mentionsYeobun(entry) else { continue }
-            return allowed
-        }
-        return true
+        lock.lock()
+        defer { lock.unlock() }
+        refreshLocked()
+        return cachedAllowed
     }
 
     static func disallowed() -> Disallowed {
-        var result = Disallowed()
-        for entry in entries() where (entry["isAllowed"] as? Bool) == false {
-            collect(entry, under: nil, into: &result)
-        }
-        return result
+        lock.lock()
+        defer { lock.unlock() }
+        refreshLocked()
+        return cachedDisallowed
     }
 
     private static var liveURL: URL {
@@ -53,25 +64,69 @@ enum MenuBarAllowance {
         YeobunPaths.applicationSupport.appendingPathComponent("menu-bar-allowance.plist")
     }
 
-    private static func entries() -> [[String: Any]] {
-        if let entries = decode(liveURL) {
-            usingSnapshot = false
-            if let data = try? Data(contentsOf: liveURL) {
-                try? FileManager.default.createDirectory(
-                    at: snapshotURL.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try? data.write(to: snapshotURL, options: .atomic)
+    /// Re-decode only when the live file or the saved copy changes. The copy
+    /// is rewritten only when the live bytes change. Caller holds `lock`.
+    private static func refreshLocked() {
+        let signature = "\(stamp(liveURL))|\(stamp(snapshotURL))"
+        if signature == cachedSignature { return }
+
+        if let data = try? Data(contentsOf: liveURL), let entries = decode(data) {
+            cachedUsingSnapshot = false
+            cachedEntries = entries
+            storeDerivedLocked()
+            let hash = data.hashValue
+            if hash != lastSnapshotHash {
+                do {
+                    try FileManager.default.createDirectory(
+                        at: snapshotURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try data.write(to: snapshotURL, options: .atomic)
+                    lastSnapshotHash = hash
+                } catch {
+                    lastSnapshotHash = nil
+                }
             }
-            return entries
+            cachedSignature = "\(stamp(liveURL))|\(stamp(snapshotURL))"
+            return
         }
-        usingSnapshot = true
-        return decode(snapshotURL) ?? []
+
+        cachedUsingSnapshot = true
+        if let data = try? Data(contentsOf: snapshotURL), let entries = decode(data) {
+            cachedEntries = entries
+        } else {
+            cachedEntries = []
+        }
+        storeDerivedLocked()
+        cachedSignature = "\(stamp(liveURL))|\(stamp(snapshotURL))"
     }
 
-    private static func decode(_ url: URL) -> [[String: Any]]? {
-        guard let data = try? Data(contentsOf: url),
-              let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+    private static func storeDerivedLocked() {
+        var allowed = true
+        var seenYeobun = false
+        var denied = Disallowed()
+        for entry in cachedEntries {
+            if !seenYeobun, mentionsYeobun(entry), let flag = entry["isAllowed"] as? Bool {
+                allowed = flag
+                seenYeobun = true
+            }
+            if (entry["isAllowed"] as? Bool) == false {
+                collect(entry, under: nil, into: &denied)
+            }
+        }
+        cachedAllowed = allowed
+        cachedDisallowed = denied
+    }
+
+    private static func stamp(_ url: URL) -> String {
+        let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+        let size = values?.fileSize ?? -1
+        let modified = values?.contentModificationDate?.timeIntervalSince1970 ?? -1
+        return "\(size)@\(modified)"
+    }
+
+    private static func decode(_ data: Data) -> [[String: Any]]? {
+        guard let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let tracked = root["trackedApplications"] as? Data,
               let entries = try? PropertyListSerialization.propertyList(from: tracked, format: nil) as? [[String: Any]]
         else { return nil }

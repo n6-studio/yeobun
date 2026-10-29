@@ -49,6 +49,42 @@ final class DeviceMonitor {
         return lastActiveMouseID
     }
 
+    /// Pointer identity for a HID device, computed once. `nil` means this
+    /// device is not an external mouse. Missing means not classified yet.
+    private static var trackedMouseIDs: [UnsafeRawPointer: String?] = [:]
+
+    static func trackedMouseID(for device: IOHIDDevice) -> String? {
+        let key = Unmanaged.passUnretained(device).toOpaque()
+        stateLock.lock()
+        if let known = trackedMouseIDs[key] {
+            stateLock.unlock()
+            return known
+        }
+        stateLock.unlock()
+        let id: String? = {
+            guard isExternalMouse(device), let mouse = MouseDevice.make(from: device) else { return nil }
+            guard isRealMouse(mouse, keyboardIDs: keyboardCompositeIDs) else { return nil }
+            return mouse.id
+        }()
+        stateLock.lock()
+        trackedMouseIDs[key] = id
+        stateLock.unlock()
+        return id
+    }
+
+    static func forgetTrackedMouse(_ device: IOHIDDevice) {
+        let key = Unmanaged.passUnretained(device).toOpaque()
+        stateLock.lock()
+        trackedMouseIDs.removeValue(forKey: key)
+        stateLock.unlock()
+    }
+
+    static func invalidateTrackedMice() {
+        stateLock.lock()
+        trackedMouseIDs.removeAll()
+        stateLock.unlock()
+    }
+
     static var reverseEnabledIDs: Set<String> = []
     static var connectedMouseIDs: [String] = []
 
@@ -58,7 +94,10 @@ final class DeviceMonitor {
     private var hidutilMice: [MouseDevice] = []
     private var hidutilKeyboardIDs: Set<String> = []
 
-    func start() {
+    /// `tracksActiveMouse` is for the scroll helper. The app only needs the
+    /// device list, and a pointer callback on its main run loop is wasted:
+    /// the helper is a different process and never sees this one's statics.
+    func start(tracksActiveMouse: Bool = false) {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let matches: [[String: Any]] = [
             [kIOHIDDeviceUsagePageKey as String: 1, kIOHIDDeviceUsageKey as String: 2],
@@ -71,7 +110,7 @@ final class DeviceMonitor {
         IOHIDManagerRegisterDeviceRemovalCallback(manager, hidDeviceRemoved, context)
         // Input callbacks need Input Monitoring. Register them only when
         // granted so a denied TCC grant cannot empty the device list.
-        if IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted {
+        if tracksActiveMouse, IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted {
             IOHIDManagerRegisterInputValueCallback(manager, hidInputValue, context)
         }
         IOHIDManagerScheduleWithRunLoop(manager, CFRunLoopGetMain(), CFRunLoopMode.defaultMode.rawValue)
@@ -115,6 +154,7 @@ final class DeviceMonitor {
         DeviceMonitor.hasExternalMouseCached = snapshot.hasExternalMouse
         DeviceMonitor.connectedMouseIDs = snapshot.mice.map(\.id)
         DeviceMonitor.keyboardCompositeIDs = snapshot.keyboardCompositeIDs
+        DeviceMonitor.invalidateTrackedMice()
         onChange?(snapshot)
     }
 
@@ -157,11 +197,12 @@ final class DeviceMonitor {
         var mice: [MouseDevice] = []
         var keyboardIDs = hidutilKeyboardIDs
         if let manager {
-            forEachDevice(in: IOHIDManagerCopyDevices(manager)) { device in
+            let devices = IOHIDManagerCopyDevices(manager)
+            forEachDevice(in: devices) { device in
                 guard isKeyboard(device), let id = MouseDevice.make(from: device)?.id else { return }
                 keyboardIDs.insert(id)
             }
-            forEachDevice(in: IOHIDManagerCopyDevices(manager)) { device in
+            forEachDevice(in: devices) { device in
                 guard isExternalMouse(device), let mouse = MouseDevice.make(from: device) else { return }
                 guard isRealMouse(mouse, keyboardIDs: keyboardIDs) else { return }
                 if !mice.contains(where: { $0.id == mouse.id }) {
@@ -203,6 +244,7 @@ private func hidDeviceRemoved(
     sender: UnsafeMutableRawPointer?,
     device: IOHIDDevice
 ) {
+    DeviceMonitor.forgetTrackedMouse(device)
     guard let context else { return }
     Unmanaged<DeviceMonitor>.fromOpaque(context).takeUnretainedValue().publish()
 }
@@ -216,9 +258,8 @@ private func hidInputValue(
     let element = IOHIDValueGetElement(value)
     guard isPointerOrWheelElement(element) else { return }
     let device = IOHIDElementGetDevice(element)
-    guard isExternalMouse(device), let mouse = MouseDevice.make(from: device) else { return }
-    if !isMouse(device), !isRealMouse(mouse, keyboardIDs: DeviceMonitor.keyboardCompositeIDs) { return }
-    DeviceMonitor.noteActiveMouse(id: mouse.id)
+    guard let id = DeviceMonitor.trackedMouseID(for: device) else { return }
+    DeviceMonitor.noteActiveMouse(id: id)
 }
 
 private func isPointerOrWheelElement(_ element: IOHIDElement) -> Bool {

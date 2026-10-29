@@ -49,6 +49,7 @@ final class MenuBarController: NSObject {
         let host = NSHostingController(
             rootView: ToolsPanel()
                 .environmentObject(model)
+                .environmentObject(model.liveStats)
                 .environmentObject(presentation)
         )
         host.sizingOptions = [.preferredContentSize]
@@ -455,12 +456,17 @@ final class MenuBarController: NSObject {
         }
     }
 
+    private var appliedIconKey: String?
+
     private func applyIcon() {
         guard let button = statusItem.button else { return }
         let mode = model.menuBarDisplay
         let tools = model.activeMenuBarTools
         let statsText = model.menuBarStatsText
         let statsCaption = model.menuBarStats.caption
+        let key = "\(mode.rawValue)|\(tools.map(\.rawValue).joined(separator: ","))|\(statsText ?? "")|\(statsCaption ?? "")"
+        if key == appliedIconKey, button.image != nil { return }
+        appliedIconKey = key
         statusItem.length = MenuBarIcon.statusItemLength(mode: mode, tools: tools, statsText: statsText)
         button.image = nil
         button.image = MenuBarIcon.makeImage(
@@ -489,12 +495,19 @@ final class MenuBarController: NSObject {
         .combineLatest(model.$voiceListening)
         .combineLatest(model.$menuBarDisplay)
         .combineLatest(model.$menuBarStats)
-        .combineLatest(model.$stats)
+        .combineLatest(model.liveStats.$sample)
         .receive(on: DispatchQueue.main)
         .sink { [weak self] _ in
             self?.applyIcon()
         }
         .store(in: &iconCancellables)
+
+        presentation.$route
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] route in
+                self?.model.notePanelRoute(route)
+            }
+            .store(in: &iconCancellables)
     }
 
     private func observeDisplayChanges() {

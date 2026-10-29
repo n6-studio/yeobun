@@ -26,21 +26,53 @@ enum MenuBarOverflow {
     private static let minItemWidth: CGFloat = 6
     private static let itemHeightRange: ClosedRange<CGFloat> = 16...48
 
+    /// Menu-bar bands captured once, on the main thread, then handed to a scan.
+    struct Geometry: Equatable {
+        var top: [CGRect]
+        var visible: [CGRect]
+        var primaryHeight: CGFloat
+
+        func placement(of rect: CGRect) -> Placement {
+            guard rect.width > 0.5, rect.height > 0.5 else { return .removed }
+            let row = top.contains { band in
+                rect.minY >= band.minY - 4 && rect.maxY <= band.maxY + 8
+            }
+            guard row else { return .removed }
+            let shown = visible.contains { band in
+                rect.minX >= band.minX - 0.5 && rect.maxX <= band.maxX + 0.5
+            }
+            return shown ? .visible : .offscreen
+        }
+
+        func isInTopBand(_ bounds: CGRect) -> Bool {
+            top.contains { band in
+                bounds.minY >= band.minY - 4 && bounds.maxY <= band.maxY + 8
+            }
+        }
+
+        func toCG(_ rect: CGRect) -> CGRect {
+            CGRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+        }
+    }
+
+    static func currentGeometry() -> Geometry {
+        Geometry(top: topBands(), visible: visibleBands(), primaryHeight: NSScreen.screens.first?.frame.height ?? 0)
+    }
+
     /// Every status item window, in menu-bar order (left to right).
-    static func statusItemWindows() -> [MenuBarItemWindow] {
-        menuBarWindows().filter { $0.bounds.width >= minItemWidth && $0.bounds.width <= maxItemWidth }
+    static func statusItemWindows(geometry: Geometry = currentGeometry()) -> [MenuBarItemWindow] {
+        menuBarWindows(geometry: geometry).filter { $0.bounds.width >= minItemWidth && $0.bounds.width <= maxItemWidth }
     }
 
     /// Very wide status windows: hider dividers, and on macOS 26 the system's
     /// own off-screen container that holds the icons it tucked away.
-    static func overflowContainers() -> [MenuBarItemWindow] {
-        menuBarWindows().filter { $0.bounds.width > maxItemWidth }
+    static func overflowContainers(geometry: Geometry = currentGeometry()) -> [MenuBarItemWindow] {
+        menuBarWindows(geometry: geometry).filter { $0.bounds.width > maxItemWidth }
     }
 
-    private static func menuBarWindows() -> [MenuBarItemWindow] {
+    private static func menuBarWindows(geometry: Geometry) -> [MenuBarItemWindow] {
         guard let list = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]]
         else { return [] }
-        let bands = topBands()
         var items: [MenuBarItemWindow] = []
         for info in list {
             guard let layer = info[kCGWindowLayer as String] as? Int,
@@ -51,9 +83,7 @@ enum MenuBarOverflow {
             else { continue }
             guard itemHeightRange.contains(bounds.height) else { continue }
             // Menu-bar items sit in a screen's top band; skip stray panels.
-            guard bands.contains(where: { band in
-                bounds.minY >= band.minY - 4 && bounds.maxY <= band.maxY + 8
-            }) else { continue }
+            guard geometry.isInTopBand(bounds) else { continue }
             items.append(MenuBarItemWindow(
                 id: id,
                 ownerPID: pid_t(info[kCGWindowOwnerPID as String] as? Int ?? 0),
@@ -71,13 +101,14 @@ enum MenuBarOverflow {
         guard item.isVisible, let window = item.button?.window, window.frame.width > 0.5 else {
             return true
         }
-        return placement(of: toCG(window.frame)) != .visible
+        let geometry = currentGeometry()
+        return geometry.placement(of: geometry.toCG(window.frame)) != .visible
     }
 
     /// Items that are not fully inside a visible stretch of any menu bar.
-    static func hiddenByMacOS() -> [MenuBarItemWindow] {
-        let bands = visibleBands()
-        return statusItemWindows().filter { item in
+    static func hiddenByMacOS(geometry: Geometry = currentGeometry()) -> [MenuBarItemWindow] {
+        let bands = geometry.visible
+        return statusItemWindows(geometry: geometry).filter { item in
             if !item.isOnscreen { return true }
             return !bands.contains { band in
                 item.bounds.minX >= band.minX - 0.5
@@ -98,16 +129,8 @@ enum MenuBarOverflow {
         case removed
     }
 
-    static func placement(of rect: CGRect) -> Placement {
-        guard rect.width > 0.5, rect.height > 0.5 else { return .removed }
-        let row = topBands().contains { band in
-            rect.minY >= band.minY - 4 && rect.maxY <= band.maxY + 8
-        }
-        guard row else { return .removed }
-        let visible = visibleBands().contains { band in
-            rect.minX >= band.minX - 0.5 && rect.maxX <= band.maxX + 0.5
-        }
-        return visible ? .visible : .offscreen
+    static func placement(of rect: CGRect, geometry: Geometry = currentGeometry()) -> Placement {
+        geometry.placement(of: rect)
     }
 
     // MARK: - Geometry

@@ -160,7 +160,10 @@ enum MenuBarOverflowResolver {
     ///
     /// Without Accessibility only the window list is available, which on
     /// macOS 26 misses off-screen items entirely.
-    static func identify(windows: [MenuBarItemWindow]) -> [OverflowItem] {
+    static func identify(
+        windows: [MenuBarItemWindow],
+        geometry: MenuBarOverflow.Geometry = MenuBarOverflow.currentGeometry()
+    ) -> [OverflowItem] {
         // Skip our own windows: the chevron and panel icon are not foreign
         // extras. The panel icon is injected separately when
         // it is off the bar, so a click can open Yeobun on screen.
@@ -181,10 +184,10 @@ enum MenuBarOverflowResolver {
             return sorted(fromWindows + blockedItems(disallowed: disallowed, seen: []))
         }
         var items: [OverflowItem] = []
-        for extra in extrasByApp() {
+        for extra in extrasByApp(skipping: disallowed) {
             // Re-read after any reflow. A frame captured earlier can sit on a neighbor.
             guard let frame = frame(of: extra.element) else { continue }
-            var placement = MenuBarOverflow.placement(of: frame)
+            var placement = geometry.placement(of: frame)
             // Allow in the Menu Bar off: macOS 27 stops drawing the item but can
             // leave its last frame on the bar.
             if placement == .visible, disallowed.contains(extra.app) { placement = .removed }
@@ -302,7 +305,7 @@ enum MenuBarOverflowResolver {
         var index: Int
     }
 
-    private static func extrasByApp() -> [Extra] {
+    private static func extrasByApp(skipping disallowed: MenuBarAllowance.Disallowed) -> [Extra] {
         var result: [Extra] = []
         let me = ProcessInfo.processInfo.processIdentifier
         // Own extras (wrench, chevron) stay out of the strip. The wrench
@@ -313,6 +316,9 @@ enum MenuBarOverflowResolver {
             && app.processIdentifier != me
             && app.bundleIdentifier != "com.apple.controlcenter"
             && app.bundleIdentifier != "com.apple.MenuBarAgent" {
+            // macOS 27+ does not host a disallowed app's status item. Asking
+            // Accessibility waits out the timeout and still returns nothing.
+            if !recordsGlyphs, disallowed.contains(app) { continue }
             let axApp = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(axApp, 0.25)
             var barValue: CFTypeRef?

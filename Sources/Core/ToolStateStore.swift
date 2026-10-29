@@ -11,6 +11,9 @@ struct ToolState: Codable, Equatable {
     var lidSleepDisabled: Bool = false
     var awakeEnabled: Bool = false
     var awakeMinutes: Int = 0
+    /// After a session ends, keep `awakeMinutes` or replace it with `awakePreferredMinutes`.
+    var awakeResume: AwakeResume = .keepLast
+    var awakePreferredMinutes: Int = 0
     var awakeDeadline: TimeInterval?
     var caffeinatePID: Int = 0
     var scrollHelperPID: Int = 0
@@ -54,6 +57,15 @@ struct ToolState: Codable, Equatable {
         lidSleepDisabled = try container.decodeIfPresent(Bool.self, forKey: .lidSleepDisabled) ?? false
         awakeEnabled = try container.decodeIfPresent(Bool.self, forKey: .awakeEnabled) ?? false
         awakeMinutes = try container.decodeIfPresent(Int.self, forKey: .awakeMinutes) ?? 0
+        if let raw = try container.decodeIfPresent(String.self, forKey: .awakeResume),
+           let mode = AwakeResume(rawValue: raw) {
+            awakeResume = mode
+        } else {
+            awakeResume = .keepLast
+        }
+        awakePreferredMinutes = AwakeResume.sanitizedMinutes(
+            try container.decodeIfPresent(Int.self, forKey: .awakePreferredMinutes) ?? 0
+        )
         awakeDeadline = try container.decodeIfPresent(TimeInterval.self, forKey: .awakeDeadline)
         caffeinatePID = try container.decodeIfPresent(Int.self, forKey: .caffeinatePID) ?? 0
         scrollHelperPID = try container.decodeIfPresent(Int.self, forKey: .scrollHelperPID) ?? 0

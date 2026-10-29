@@ -51,12 +51,6 @@ final class ScrollTool: ToggleTool {
 
     func apply(mice: [MouseDevice]) {
         let state = ToolStateStore.shared.current
-        let enabledIDs = ScrollPolicy.enabledIDs(
-            mice: mice,
-            map: state.scrollReverseByDevice,
-            enabled: state.scrollReverseEnabled
-        )
-        DeviceMonitor.reverseEnabledIDs = enabledIDs
         let shouldRun = state.scrollReverseEnabled && mice.contains {
             state.scrollReverseByDevice[$0.id] ?? true
         }

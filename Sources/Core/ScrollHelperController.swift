@@ -4,9 +4,17 @@ import Foundation
 final class ScrollHelperController {
     static let shared = ScrollHelperController()
 
+    private let watch = ProcessWatch()
+
     var isRunning: Bool {
         let pid = pid_t(ToolStateStore.shared.current.scrollHelperPID)
-        return DetachedProcess.isRunning(pid: pid, commandContains: YeobunPaths.scrollHelperName)
+        if watch.isAlive(pid) { return true }
+        guard DetachedProcess.isRunning(pid: pid, commandContains: YeobunPaths.scrollHelperName) else {
+            watch.cancel()
+            return false
+        }
+        watch.watch(pid)
+        return true
     }
 
     @discardableResult
@@ -19,10 +27,14 @@ final class ScrollHelperController {
         do {
             let pid = try DetachedProcess.spawn(executable: url.path, arguments: [])
             ToolStateStore.shared.update { $0.scrollHelperPID = Int(pid) }
-            usleep(250_000)
-            if isRunning { return true }
-            usleep(250_000)
-            return isRunning
+            guard DetachedProcess.stayedAlive(pid: pid, for: 0.2),
+                  DetachedProcess.isRunning(pid: pid, commandContains: YeobunPaths.scrollHelperName)
+            else {
+                watch.cancel()
+                return false
+            }
+            watch.watch(pid)
+            return true
         } catch {
             return false
         }
@@ -32,13 +44,9 @@ final class ScrollHelperController {
         let pid = pid_t(ToolStateStore.shared.current.scrollHelperPID)
         if DetachedProcess.isRunning(pid: pid, commandContains: YeobunPaths.scrollHelperName) {
             kill(pid, SIGTERM)
-            for _ in 0..<30 {
-                if !DetachedProcess.isRunning(pid: pid, commandContains: YeobunPaths.scrollHelperName) {
-                    break
-                }
-                usleep(50_000)
-            }
+            DetachedProcess.waitForExit(pid: pid, timeout: 1.5)
         }
+        watch.cancel()
         ToolStateStore.shared.update { $0.scrollHelperPID = 0 }
     }
 }

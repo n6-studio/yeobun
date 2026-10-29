@@ -38,14 +38,40 @@ enum DiskStats {
             )
         }
 
-        if !samples.contains(where: \.isBoot), let boot = bootVolume() {
+        if !samples.contains(where: \.isBoot), let boot = statfsVolume(path: "/", name: "Macintosh HD", isBoot: true) {
             samples.insert(boot, at: 0)
         }
         return samples
     }
 
+    /// The boot volume only. One URL, not a walk of every mount.
     static func bootVolume() -> VolumeSample? {
-        volumes().first(where: \.isBoot) ?? statfsVolume(path: "/", name: "Macintosh HD", isBoot: true)
+        let url = URL(fileURLWithPath: "/")
+        let keys: Set<URLResourceKey> = [
+            .volumeNameKey,
+            .volumeTotalCapacityKey,
+            .volumeAvailableCapacityForImportantUsageKey,
+            .volumeAvailableCapacityKey
+        ]
+        if let values = try? url.resourceValues(forKeys: keys) {
+            let total = UInt64(values.volumeTotalCapacity ?? 0)
+            if total > 0 {
+                let available = UInt64(
+                    values.volumeAvailableCapacityForImportantUsage
+                        ?? Int64(values.volumeAvailableCapacity ?? 0)
+                )
+                let used = total > available ? total - available : 0
+                let name = values.volumeName?.trimmingCharacters(in: .whitespacesAndNewlines)
+                return VolumeSample(
+                    name: (name?.isEmpty == false ? name : nil) ?? "Macintosh HD",
+                    path: "/",
+                    used: used,
+                    total: total,
+                    isBoot: true
+                )
+            }
+        }
+        return statfsVolume(path: "/", name: "Macintosh HD", isBoot: true)
     }
 
     private static func statfsVolume(path: String, name: String, isBoot: Bool) -> VolumeSample? {

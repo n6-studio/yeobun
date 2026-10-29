@@ -1,5 +1,26 @@
 import Foundation
 
+/// What the duration row shows after a keep-awake session ends.
+enum AwakeResume: String, Codable, CaseIterable, Identifiable {
+    case keepLast
+    case preferred
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .keepLast: "Keep last setting"
+        case .preferred: "Always set back to"
+        }
+    }
+
+    static let durationChoices = [0, 5, 10, 15, 30, 60, 120, 300]
+
+    static func sanitizedMinutes(_ minutes: Int) -> Int {
+        durationChoices.contains(minutes) ? minutes : 0
+    }
+}
+
 final class AwakeTool: ToggleTool {
     let id: ToolID = .awake
     private let service = CaffeinateService()
@@ -82,6 +103,9 @@ final class AwakeTool: ToggleTool {
             ToolStateStore.shared.update {
                 $0.awakeEnabled = false
                 $0.awakeDeadline = nil
+                if $0.awakeResume == .preferred {
+                    $0.awakeMinutes = AwakeResume.sanitizedMinutes($0.awakePreferredMinutes)
+                }
             }
         }
     }

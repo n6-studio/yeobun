@@ -24,14 +24,24 @@ final class PanelPresentation: ObservableObject {
 
     func open(_ route: PanelRoute) {
         isEditingHome = false
-        self.route = route
-        generation += 1
+        assign(route, animated: !route.isSettings && !self.route.isSettings)
     }
 
     func back() {
         isEditingHome = false
-        route = .home
-        generation += 1
+        let next: PanelRoute = route.settingsChild ? .settings : .home
+        assign(next, animated: !route.isSettings && !next.isSettings)
+    }
+
+    /// Settings swaps height inside the popover. Animating that move leaves the
+    /// hover regions on the previous page, so the next hover lights the wrong card.
+    private func assign(_ route: PanelRoute, animated: Bool) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = !animated
+        withTransaction(transaction) {
+            self.route = route
+            generation += 1
+        }
     }
 }
 
@@ -49,6 +59,9 @@ enum PanelRoute: Equatable, Hashable {
     case storage
     case remote(UUID)
     case settings
+    case settingsGeneral
+    case settingsMenuBar
+    case settingsRemotes
 
     var title: String {
         switch self {
@@ -65,6 +78,28 @@ enum PanelRoute: Equatable, Hashable {
         case .storage: ToolID.storage.title
         case .remote: "Remote"
         case .settings: "Settings"
+        case .settingsGeneral: "General"
+        case .settingsMenuBar: "Menu bar"
+        case .settingsRemotes: "Remote servers"
+        }
+    }
+
+    var isSettings: Bool {
+        switch self {
+        case .settings, .settingsGeneral, .settingsMenuBar, .settingsRemotes:
+            true
+        default:
+            false
+        }
+    }
+
+    /// A page opened from the settings list. Back returns to that list.
+    var settingsChild: Bool {
+        switch self {
+        case .settingsGeneral, .settingsMenuBar, .settingsRemotes:
+            true
+        default:
+            false
         }
     }
 }
@@ -203,9 +238,11 @@ extension ToolID {
 
 enum Motion {
     static let enter = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.3)
+    static let homeEnter = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.16)
     static let press = Animation.timingCurve(0.2, 0, 0, 1, duration: 0.15)
     static let hover = press
     static let stagger: TimeInterval = 0.1
+    static let homeStagger: TimeInterval = 0.035
     static let enterOffset: CGFloat = 8
     static let pressScale: CGFloat = 0.96
     static let hoverScale: CGFloat = 1.06
@@ -354,6 +391,8 @@ struct StateSymbol: View {
 struct StaggeredEntrance: ViewModifier {
     let index: Int
     let generation: Int
+    var pace: TimeInterval = Motion.stagger
+    var animation: Animation = Motion.enter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shown = false
     @State private var played = 0
@@ -391,14 +430,19 @@ struct StaggeredEntrance: ViewModifier {
             shown = true
             return
         }
-        withAnimation(Motion.enter.delay(Double(index) * Motion.stagger)) {
+        withAnimation(animation.delay(Double(index) * pace)) {
             shown = true
         }
     }
 }
 
 extension View {
-    func stagger(index: Int, generation: Int) -> some View {
-        modifier(StaggeredEntrance(index: index, generation: generation))
+    func stagger(
+        index: Int,
+        generation: Int,
+        pace: TimeInterval = Motion.stagger,
+        animation: Animation = Motion.enter
+    ) -> some View {
+        modifier(StaggeredEntrance(index: index, generation: generation, pace: pace, animation: animation))
     }
 }

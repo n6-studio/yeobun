@@ -1,13 +1,22 @@
 import Darwin
 import Foundation
 
+/// What a tick is allowed to collect beyond the glance (CPU, memory, power, network, boot volume).
+struct StatsBudget: Equatable {
+    var processes = false
+    var volumes = false
+    var accessories = false
+
+    static let detail = StatsBudget(processes: true, volumes: true, accessories: true)
+}
+
 /// Host-wide stats. Sampled while the panel is open, and while menu-bar glances are on.
 final class SystemStatsService {
     var onUpdate: ((SystemSample) -> Void)?
 
     private var timer: DispatchSourceTimer?
     private var interval: TimeInterval = 1
-    private var includeDetail = true
+    private var budget = StatsBudget()
     private var previousIdle: UInt64 = 0
     private var previousTotal: UInt64 = 0
     private var havePreviousCPU = false
@@ -16,17 +25,19 @@ final class SystemStatsService {
     private let queue = DispatchQueue(label: "naf.system-stats", qos: .utility)
     private lazy var network = NetworkSampler(queue: queue)
     private let processes = ProcessSampler()
+    private var cachedProcesses: [ProcessUsage] = []
+    private var lastProcessSample: TimeInterval = 0
     private let stateLock = NSLock()
     private var generation = 0
 
-    func start(interval: TimeInterval = 1.0, detail: Bool = true) {
-        let id = nextGeneration()
+    func start(interval: TimeInterval = 1.0, budget: StatsBudget = StatsBudget()) {
         queue.async { [weak self] in
-            guard let self, self.isCurrent(id) else { return }
-            self.includeDetail = detail
+            guard let self else { return }
+            self.budget = budget
             if self.timer != nil, abs(self.interval - interval) < 0.01 {
                 return
             }
+            let id = self.nextGeneration()
             self.interval = interval
             self.stopTimer(reset: false)
             self.network.start()
@@ -40,6 +51,16 @@ final class SystemStatsService {
             }
             timer.resume()
             self.timer = timer
+        }
+    }
+
+    /// Swap the expensive reads without restarting the timer.
+    func setBudget(_ budget: StatsBudget) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            let changed = self.budget != budget
+            self.budget = budget
+            if changed, self.timer != nil { self.publish() }
         }
     }
 
@@ -74,11 +95,11 @@ final class SystemStatsService {
             processes.reset()
             network.resetRates()
             network.start()
-            _ = makeSample(detail: true)
+            _ = makeSample(budget: .detail)
         }
         Thread.sleep(forTimeInterval: interval)
         return queue.sync {
-            let sample = makeSample(detail: true)
+            let sample = makeSample(budget: .detail)
             network.stop()
             return sample
         }
@@ -94,16 +115,16 @@ final class SystemStatsService {
     }
 
     private func publish() {
-        onUpdate?(makeSample(detail: includeDetail))
+        onUpdate?(makeSample(budget: budget))
     }
 
-    private func makeSample(detail: Bool) -> SystemSample {
+    private func makeSample(budget: StatsBudget) -> SystemSample {
         autoreleasepool {
-            makeSampleUnpooled(detail: detail)
+            makeSampleUnpooled(budget: budget)
         }
     }
 
-    private func makeSampleUnpooled(detail: Bool) -> SystemSample {
+    private func makeSampleUnpooled(budget: StatsBudget) -> SystemSample {
         let ram = memoryUsage()
         let cpu = cpuUsage()
         if cpu.ready {
@@ -130,10 +151,23 @@ final class SystemStatsService {
         sample.powerWatts = sample.battery?.watts
         sample.network = network.sample()
         sample.bootVolume = DiskStats.bootVolume()
-        if detail {
+        if budget.accessories {
             sample.accessories = BatteryStats.accessories()
+        }
+        if budget.volumes {
             sample.volumes = DiskStats.volumes()
-            sample.topProcesses = processes.sample()
+        }
+        if budget.processes {
+            let now = ProcessInfo.processInfo.systemUptime
+            if cachedProcesses.isEmpty || now - lastProcessSample >= 2 {
+                cachedProcesses = processes.sample()
+                lastProcessSample = now
+            }
+            sample.topProcesses = cachedProcesses
+        } else if !cachedProcesses.isEmpty {
+            cachedProcesses = []
+            lastProcessSample = 0
+            processes.reset()
         }
         return sample
     }

@@ -46,24 +46,98 @@ enum DetachedProcess {
         return name.contains(needle)
     }
 
+    /// Executable path, or the short process name when the path is unavailable.
+    /// `proc_pidpath` / `proc_name` stay in this process. No `/bin/ps`.
     static func commandName(of pid: pid_t) -> String? {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/ps")
-        task.arguments = ["-p", "\(pid)", "-o", "comm="]
-        let stdout = Pipe()
-        task.standardOutput = stdout
-        task.standardError = FileHandle.nullDevice
-        task.standardInput = FileHandle.nullDevice
-        do {
-            try task.run()
-        } catch {
-            return nil
+        guard pid > 1 else { return nil }
+        var path = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        if proc_pidpath(pid, &path, UInt32(path.count)) > 0 {
+            let value = String(cString: path)
+            if !value.isEmpty { return value }
         }
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else { return nil }
-        let name = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return name?.isEmpty == false ? name : nil
+        var name = [CChar](repeating: 0, count: 256)
+        guard proc_name(pid, &name, UInt32(name.count)) > 0 else { return nil }
+        let value = String(cString: name)
+        return value.isEmpty ? nil : value
+    }
+
+    /// `true` when `pid` is still alive after `seconds`. Waits on process exit
+    /// instead of sleeping and probing.
+    static func stayedAlive(pid: pid_t, for seconds: TimeInterval) -> Bool {
+        guard pid > 1, kill(pid, 0) == 0 else { return false }
+        return !waitForExit(pid: pid, timeout: seconds)
+    }
+
+    /// `true` once the process is gone, or the timeout elapses after it has gone.
+    @discardableResult
+    static func waitForExit(pid: pid_t, timeout: TimeInterval) -> Bool {
+        guard pid > 1 else { return true }
+        if kill(pid, 0) != 0 { return true }
+        let source = DispatchSource.makeProcessSource(
+            identifier: pid,
+            eventMask: .exit,
+            queue: .global(qos: .utility)
+        )
+        let semaphore = DispatchSemaphore(value: 0)
+        source.setEventHandler { semaphore.signal() }
+        source.resume()
+        let exited = semaphore.wait(timeout: .now() + timeout) == .success
+        source.cancel()
+        return exited || kill(pid, 0) != 0
+    }
+}
+
+/// Remembers one pid and flips when that process exits, so callers can skip
+/// a name lookup on every poll.
+final class ProcessWatch {
+    private let lock = NSLock()
+    private var source: DispatchSourceProcess?
+    private var pid: pid_t = 0
+    private var exited = true
+
+    func isAlive(_ pid: pid_t) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return self.pid == pid && !exited && source != nil
+    }
+
+    func watch(_ pid: pid_t) {
+        lock.lock()
+        if self.pid == pid, source != nil, !exited {
+            lock.unlock()
+            return
+        }
+        let previous = source
+        source = nil
+        lock.unlock()
+        previous?.cancel()
+
+        let source = DispatchSource.makeProcessSource(
+            identifier: pid,
+            eventMask: .exit,
+            queue: .global(qos: .utility)
+        )
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            if self.pid == pid { self.exited = true }
+            self.lock.unlock()
+        }
+        lock.lock()
+        self.pid = pid
+        self.exited = false
+        self.source = source
+        lock.unlock()
+        source.resume()
+    }
+
+    func cancel() {
+        lock.lock()
+        let previous = source
+        source = nil
+        pid = 0
+        exited = true
+        lock.unlock()
+        previous?.cancel()
     }
 }

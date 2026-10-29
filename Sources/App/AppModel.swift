@@ -42,6 +42,26 @@ final class AppModel: ObservableObject {
             }
         }
     }
+    /// Keep the last duration, or return to `awakePreferredMinutes` when a session ends.
+    @Published var awakeResume: AwakeResume {
+        didSet {
+            guard !suppressAwakeRestart else { return }
+            ToolStateStore.shared.update { $0.awakeResume = awakeResume }
+            applyPreferredDurationIfIdle()
+        }
+    }
+    @Published var awakePreferredMinutes: Int {
+        didSet {
+            let clean = AwakeResume.sanitizedMinutes(awakePreferredMinutes)
+            if clean != awakePreferredMinutes {
+                awakePreferredMinutes = clean
+                return
+            }
+            guard !suppressAwakeRestart else { return }
+            ToolStateStore.shared.update { $0.awakePreferredMinutes = clean }
+            applyPreferredDurationIfIdle()
+        }
+    }
 
     @Published var menuBarHideEnabled = false
     /// Stored with the toggle. The chevron lists icons already taken off the bar.
@@ -147,7 +167,12 @@ final class AppModel: ObservableObject {
     @Published var updateInstallBusy = false
     @Published var newerVersion: String?
     @Published var keyboardBusy = false
-    @Published var stats = SystemSample()
+    /// Stat ticks publish here, so a sample does not invalidate every tool row.
+    let liveStats = LiveStats()
+    var stats: SystemSample {
+        get { liveStats.sample }
+        set { liveStats.sample = newValue }
+    }
     @Published var launchAtLogin: Bool {
         didSet {
             UserDefaults.standard.set(launchAtLogin, forKey: Keys.launchAtLogin)
@@ -179,12 +204,15 @@ final class AppModel: ObservableObject {
             syncRemoteSampling()
         }
     }
-    @Published var remoteSamples: [UUID: RemoteSample] = [:]
+    var remoteSamples: [UUID: RemoteSample] {
+        get { liveStats.remoteSamples }
+        set { liveStats.remoteSamples = newValue }
+    }
     @Published var remoteAddNotice: String?
     @Published var remoteTestingID: UUID?
     @Published var remoteTestNotice: [UUID: String] = [:]
     let timeoutChoices = [0, 5, 10, 15, 30, 60]
-    let awakeDurationChoices = [0, 5, 10, 15, 30, 60, 120, 300]
+    let awakeDurationChoices = AwakeResume.durationChoices
     let menuBarStripIconSizeChoices = MenuBarTool.iconSizeChoices
     let menuBarStripLabelSizeChoices = MenuBarTool.labelSizeChoices
 
@@ -211,6 +239,7 @@ final class AppModel: ObservableObject {
     private let overflowQueue = DispatchQueue(label: "studio.n6.yeobun.overflow", qos: .userInitiated)
 
     private var panelWantsStats = false
+    private var panelRoute: PanelRoute = .home
     private let voiceSession = VoiceSession()
     private let voiceHotKeys = VoiceHotKeyService()
     private var voiceObserver: NSObjectProtocol?
@@ -233,8 +262,11 @@ final class AppModel: ObservableObject {
         scrollReverseEnabled = state.scrollReverseEnabled
         scrollReverseByDevice = state.scrollReverseByDevice
         lidSleepDisabled = state.lidSleepDisabled
-        let storedAwakeMinutes = state.awakeMinutes
-        awakeMinutes = [0, 5, 10, 15, 30, 60, 120, 300].contains(storedAwakeMinutes) ? storedAwakeMinutes : 0
+        suppressAwakeRestart = true
+        awakeMinutes = AwakeResume.sanitizedMinutes(state.awakeMinutes)
+        awakeResume = state.awakeResume
+        awakePreferredMinutes = AwakeResume.sanitizedMinutes(state.awakePreferredMinutes)
+        suppressAwakeRestart = false
         awakeActive = state.awakeEnabled
         keyboardLocked = state.keyboardLocked && Self.isCurrentBoot(state.keyboardLockBoot)
         menuBarHideEnabled = state.menuBarHideEnabled
@@ -923,13 +955,18 @@ final class AppModel: ObservableObject {
         }
         devices.onChange = { [weak self] snapshot in
             DispatchQueue.main.async {
-                self?.mice = snapshot.mice
-                self?.mouseConnected = snapshot.hasExternalMouse
-                self?.mouseNames = snapshot.mouseNames
-                self?.seedMouseDefaults()
-                self?.refreshScrollReverseState()
-                if self?.keyboardBusy != true {
-                    self?.restoreKeyboardIfNeeded()
+                guard let self else { return }
+                let sameMice = self.mice == snapshot.mice
+                    && self.mouseConnected == snapshot.hasExternalMouse
+                    && self.mouseNames == snapshot.mouseNames
+                guard !sameMice else { return }
+                self.mice = snapshot.mice
+                self.mouseConnected = snapshot.hasExternalMouse
+                self.mouseNames = snapshot.mouseNames
+                self.seedMouseDefaults()
+                self.refreshScrollReverseState()
+                if !self.keyboardBusy {
+                    self.restoreKeyboardIfNeeded()
                 }
             }
         }
@@ -1002,17 +1039,35 @@ final class AppModel: ObservableObject {
         syncStatsSampling()
     }
 
+    /// The open page decides which expensive reads the 1s tick is allowed to do.
+    func notePanelRoute(_ route: PanelRoute) {
+        panelRoute = route
+        guard panelWantsStats else { return }
+        statsService.setBudget(statsBudget)
+    }
+
+    private var statsBudget: StatsBudget {
+        guard panelWantsStats else { return StatsBudget() }
+        switch panelRoute {
+        case .machine: return StatsBudget(processes: true)
+        case .storage: return StatsBudget(volumes: true)
+        case .battery: return StatsBudget(accessories: true)
+        default: return StatsBudget()
+        }
+    }
+
     private func syncStatsSampling() {
         let menuWantsStats = menuBarStats != .off
         if panelWantsStats || menuWantsStats {
             statsService.onUpdate = { [weak self] sample in
                 DispatchQueue.main.async {
-                    self?.stats = sample
+                    guard let self, self.stats != sample else { return }
+                    self.stats = sample
                 }
             }
             statsService.start(
                 interval: panelWantsStats ? 1.0 : 2.0,
-                detail: panelWantsStats
+                budget: statsBudget
             )
         } else {
             statsService.stop()
@@ -1030,7 +1085,8 @@ final class AppModel: ObservableObject {
         }
         remoteStatsService.onUpdate = { [weak self] samples in
             DispatchQueue.main.async {
-                self?.remoteSamples = samples
+                guard let self, self.remoteSamples != samples else { return }
+                self.remoteSamples = samples
             }
         }
         remoteStatsService.start(servers: remotes, interval: 2.0)
@@ -1152,9 +1208,10 @@ final class AppModel: ObservableObject {
         overflowEpoch += 1
         let epoch = overflowEpoch
         screenRecordingGranted = MenuBarOverflowResolver.screenRecordingGranted
+        let geometry = MenuBarOverflow.currentGeometry()
         overflowQueue.async { [weak self] in
-            let windows = MenuBarOverflow.hiddenByMacOS()
-            let identified = MenuBarOverflowResolver.identify(windows: windows)
+            let windows = MenuBarOverflow.hiddenByMacOS(geometry: geometry)
+            let identified = MenuBarOverflowResolver.identify(windows: windows, geometry: geometry)
             DispatchQueue.main.async {
                 guard let self, epoch == self.overflowEpoch else { return }
                 self.overflowItems = self.prefixedOverflow(identified)
@@ -1688,6 +1745,7 @@ final class AppModel: ObservableObject {
         awakeActive = false
         awakeRemainingSeconds = nil
         awakeStatus = "Sleeps on idle"
+        syncAwakeMinutesFromStore()
     }
 
     private func handleAwakeExpired() {
@@ -1696,6 +1754,25 @@ final class AppModel: ObservableObject {
         awakeActive = false
         awakeRemainingSeconds = nil
         awakeStatus = "Sleeps on idle"
+        syncAwakeMinutesFromStore()
+    }
+
+    /// While nothing is running, the duration row follows the preferred timer.
+    private func applyPreferredDurationIfIdle() {
+        guard awakeResume == .preferred, !awakeActive else { return }
+        let preferred = AwakeResume.sanitizedMinutes(awakePreferredMinutes)
+        guard awakeMinutes != preferred else { return }
+        suppressAwakeRestart = true
+        awakeMinutes = preferred
+        suppressAwakeRestart = false
+    }
+
+    private func syncAwakeMinutesFromStore() {
+        let minutes = AwakeResume.sanitizedMinutes(ToolStateStore.shared.current.awakeMinutes)
+        guard awakeMinutes != minutes else { return }
+        suppressAwakeRestart = true
+        awakeMinutes = minutes
+        suppressAwakeRestart = false
     }
 
     private func restoreAwakeIfNeeded() {
@@ -1710,20 +1787,27 @@ final class AppModel: ObservableObject {
             awakeRemainingSeconds = nil
             awakeStatus = "Sleeps on idle"
         }
+        if !snapshot.active {
+            syncAwakeMinutesFromStore()
+        }
     }
 
     private func applyAwakeSnapshot(_ snapshot: CaffeinateService.Snapshot) {
-        awakeActive = snapshot.active
-        awakeRemainingSeconds = snapshot.remainingSeconds
+        if awakeActive != snapshot.active { awakeActive = snapshot.active }
+        if awakeRemainingSeconds != snapshot.remainingSeconds {
+            awakeRemainingSeconds = snapshot.remainingSeconds
+        }
+        let next: String
         if snapshot.active {
             if let remaining = snapshot.remainingSeconds {
-                awakeStatus = "Won't sleep · \(Self.formatAwakeRemaining(remaining, compact: false)) left"
+                next = "Won't sleep · \(Self.formatAwakeRemaining(remaining, compact: false)) left"
             } else {
-                awakeStatus = "Won't sleep until you turn it off"
+                next = "Won't sleep until you turn it off"
             }
         } else {
-            awakeStatus = "Sleeps on idle"
+            next = "Sleeps on idle"
         }
+        if awakeStatus != next { awakeStatus = next }
     }
 
     private func startAwakeTick() {
@@ -2002,25 +2086,21 @@ final class AppModel: ObservableObject {
     }
 
     private func updateScrollStatus() {
+        let next: String
         if mice.isEmpty {
-            scrollStatus = "Connect a mouse to reverse its wheel"
-            return
-        }
-        if !scrollReverseEnabled {
-            scrollStatus = "Follows System Settings"
-            return
-        }
-        if !mice.contains(where: { isScrollReverseOn(for: $0.id) }) {
-            scrollStatus = "No mouse selected"
-            return
-        }
-        if ScrollHelperController.shared.isRunning {
-            scrollStatus = "Mouse wheel is reversed"
+            next = "Connect a mouse to reverse its wheel"
+        } else if !scrollReverseEnabled {
+            next = "Follows System Settings"
+        } else if !mice.contains(where: { isScrollReverseOn(for: $0.id) }) {
+            next = "No mouse selected"
+        } else if ScrollHelperController.shared.isRunning {
+            next = "Mouse wheel is reversed"
         } else if !accessibilityTrusted {
-            scrollStatus = "Allow Accessibility to reverse scroll"
+            next = "Allow Accessibility to reverse scroll"
         } else {
-            scrollStatus = "Unable to reverse scroll. Turn Yeobun off and on in Accessibility, then reopen Yeobun."
+            next = "Unable to reverse scroll. Turn Yeobun off and on in Accessibility, then reopen Yeobun."
         }
+        if scrollStatus != next { scrollStatus = next }
     }
 
     private func handleExternalStateChange() {
@@ -2031,9 +2111,9 @@ final class AppModel: ObservableObject {
         dimKeyboardWhenLocked = state.dimKeyboardWhenLocked
         scrollReverseEnabled = state.scrollReverseEnabled
         scrollReverseByDevice = state.scrollReverseByDevice
-        awakeMinutes = [0, 5, 10, 15, 30, 60, 120, 300].contains(state.awakeMinutes)
-            ? state.awakeMinutes
-            : awakeMinutes
+        awakeMinutes = AwakeResume.sanitizedMinutes(state.awakeMinutes)
+        awakeResume = state.awakeResume
+        awakePreferredMinutes = AwakeResume.sanitizedMinutes(state.awakePreferredMinutes)
         suppressAwakeRestart = false
         if state.voiceEnabled != voiceEnabled {
             if !state.voiceEnabled {

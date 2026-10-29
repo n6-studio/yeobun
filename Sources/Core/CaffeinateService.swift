@@ -21,6 +21,8 @@ final class CaffeinateService {
         var remainingSeconds: Int?
     }
 
+    private let watch = ProcessWatch()
+
     func snapshot() -> Snapshot {
         guard livePID() != nil else {
             return Snapshot(active: false, remainingSeconds: nil)
@@ -44,6 +46,7 @@ final class CaffeinateService {
         }
         do {
             let pid = try DetachedProcess.spawn(executable: "/usr/bin/caffeinate", arguments: arguments)
+            watch.watch(pid)
             ToolStateStore.shared.update {
                 $0.caffeinatePID = Int(pid)
                 $0.awakeDeadline = deadline
@@ -57,17 +60,23 @@ final class CaffeinateService {
         if let pid = livePID() {
             kill(pid, SIGTERM)
         }
+        watch.cancel()
         ToolStateStore.shared.update {
             $0.caffeinatePID = 0
             $0.awakeDeadline = nil
         }
     }
 
+    /// Name is checked once per pid. Later calls trust the exit watch, so the
+    /// 1s remaining-time tick is arithmetic.
     private func livePID() -> pid_t? {
         let pid = pid_t(ToolStateStore.shared.current.caffeinatePID)
+        if watch.isAlive(pid) { return pid }
         guard DetachedProcess.isRunning(pid: pid, commandContains: "caffeinate") else {
+            watch.cancel()
             return nil
         }
+        watch.watch(pid)
         return pid
     }
 }
