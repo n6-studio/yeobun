@@ -1198,6 +1198,10 @@ final class AppModel: ObservableObject {
             return
         }
         if MenuBarOverflowResolver.press(item) { return }
+        if let pid = item.pid, let app = NSRunningApplication(processIdentifier: pid) {
+            app.activate()
+            return
+        }
         if let name = item.appName,
            let app = NSWorkspace.shared.runningApplications.first(where: { $0.localizedName == name }) {
             app.activate()

@@ -198,6 +198,19 @@ struct MissingAppHelp: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Color.accentColor)
 
+            if MenuBarAllowance.usingSnapshot {
+                Text("This list is a saved copy. Full Disk Access reads Menu Bar settings as they change.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Full Disk Access") {
+                    MenuBarOverflowResolver.openFullDiskAccess()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+            }
+
             Button {
                 still.open.toggle()
                 onExpanded()

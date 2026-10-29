@@ -3,10 +3,17 @@ import AppKit
 /// Control Center's "Allow in the Menu Bar" list. Turning Yeobun off there
 /// hides the wrench and the chevron together.
 ///
-/// An app turned off there stops being drawn, but on macOS 27 its item can
-/// keep reporting its last frame on the bar through Accessibility.
+/// An app turned off there stops being drawn. macOS 27 can leave its last
+/// frame on the bar. macOS 27.2 drops `AXExtrasMenuBar` for that app entirely,
+/// so the strip lists it from this record and opens the app when clicked.
+///
+/// macOS 27.2 also blocks other apps from reading the live file. A saved copy
+/// in Application Support is the fallback until Full Disk Access is on.
 enum MenuBarAllowance {
     private static let bundleID = "studio.n6.yeobun"
+
+    /// The last read used the saved copy. The live file was not readable.
+    static private(set) var usingSnapshot = false
 
     /// Apps whose Allow in the Menu Bar switch is off.
     struct Disallowed {
@@ -37,14 +44,37 @@ enum MenuBarAllowance {
         return result
     }
 
-    private static func entries() -> [[String: Any]] {
-        let url = FileManager.default.homeDirectoryForCurrentUser
+    private static var liveURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Group Containers/group.com.apple.controlcenter/Library/Preferences/group.com.apple.controlcenter.plist")
+    }
+
+    private static var snapshotURL: URL {
+        YeobunPaths.applicationSupport.appendingPathComponent("menu-bar-allowance.plist")
+    }
+
+    private static func entries() -> [[String: Any]] {
+        if let entries = decode(liveURL) {
+            usingSnapshot = false
+            if let data = try? Data(contentsOf: liveURL) {
+                try? FileManager.default.createDirectory(
+                    at: snapshotURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
+                try? data.write(to: snapshotURL, options: .atomic)
+            }
+            return entries
+        }
+        usingSnapshot = true
+        return decode(snapshotURL) ?? []
+    }
+
+    private static func decode(_ url: URL) -> [[String: Any]]? {
         guard let data = try? Data(contentsOf: url),
               let root = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
               let tracked = root["trackedApplications"] as? Data,
               let entries = try? PropertyListSerialization.propertyList(from: tracked, format: nil) as? [[String: Any]]
-        else { return [] }
+        else { return nil }
         return entries
     }
 

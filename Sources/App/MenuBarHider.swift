@@ -169,6 +169,13 @@ final class MenuBarHider {
             }
             return
         }
+        // Turned off in Allow in the Menu Bar: macOS 27.2 publishes no menu
+        // for the icon. Open the app instead of waiting on a click that misses.
+        if item.element == nil, item.placement == .removed {
+            overflow.dismiss()
+            model.activateOverflowItem(item)
+            return
+        }
         let event = click == .right ? NSApp.currentEvent : nil
         let entries = MenuBarOverflowResolver.menuEntries(for: item)
         let shown = overflowMenu.present(

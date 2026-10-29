@@ -45,7 +45,14 @@ struct OverflowItem: Identifiable, Equatable {
     /// Tile help: Yeobun's own entry does not need Accessibility.
     var helpText: String {
         if opensYeobun { return tooltip }
-        if element == nil { return "\(label) — Allow Accessibility to use this icon" }
+        if element == nil {
+            // macOS 27.2 does not publish a menu for an app turned off in
+            // Allow in the Menu Bar. The tile still opens that app.
+            if placement == .removed, appName != nil {
+                return "\(label) — Turned off in Menu Bar settings"
+            }
+            return "\(label) — Allow Accessibility to use this icon"
+        }
         return tooltip
     }
 
@@ -99,6 +106,9 @@ struct OverflowMenuEntry {
 /// On macOS 27 the bar is one window, so a removed icon has no picture of its
 /// own and the tile keeps the app icon. Frames are read again at classification
 /// and click time, because a reflow leaves the previous frame pointing at a neighbor.
+///
+/// On macOS 27.2 an app turned off in Allow in the Menu Bar no longer has an
+/// extras menu bar at all. Those apps are listed from Control Center's record.
 enum MenuBarOverflowResolver {
     /// macOS 14–26 can still snapshot a per-icon window. macOS 27 draws the
     /// whole bar as one window, and a removed icon is not in it.
@@ -119,6 +129,16 @@ enum MenuBarOverflowResolver {
         let urls = [
             "x-apple.systempreferences:com.apple.ControlCenter-Settings.extension",
             "x-apple.systempreferences:com.apple.preference.controlcenter"
+        ]
+        for raw in urls {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
+    static func openFullDiskAccess() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
         ]
         for raw in urls {
             if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
@@ -148,8 +168,9 @@ enum MenuBarOverflowResolver {
             window.ownerPID != ProcessInfo.processInfo.processIdentifier
                 && window.ownerName != "Yeobun"
         }
+        let disallowed = MenuBarAllowance.disallowed()
         guard AccessibilityAuth.hasPermission else {
-            return foreign.map { window in
+            let fromWindows = foreign.map { window in
                 OverflowItem(
                     id: "window-\(window.id)",
                     bounds: window.bounds,
@@ -157,9 +178,9 @@ enum MenuBarOverflowResolver {
                     captureWindow: window
                 )
             }
+            return sorted(fromWindows + blockedItems(disallowed: disallowed, seen: []))
         }
         var items: [OverflowItem] = []
-        let disallowed = MenuBarAllowance.disallowed()
         for extra in extrasByApp() {
             // Re-read after any reflow. A frame captured earlier can sit on a neighbor.
             guard let frame = frame(of: extra.element) else { continue }
@@ -181,11 +202,44 @@ enum MenuBarOverflowResolver {
                 element: extra.element
             ))
         }
-        return items.sorted { lhs, rhs in
+        let seen = Set(items.compactMap(\.pid))
+        items.append(contentsOf: blockedItems(disallowed: disallowed, seen: seen))
+        return sorted(items)
+    }
+
+    private static func sorted(_ items: [OverflowItem]) -> [OverflowItem] {
+        items.sorted { lhs, rhs in
             if lhs.placement != rhs.placement { return lhs.placement == .offscreen }
             if lhs.bounds.minX != rhs.bounds.minX { return lhs.bounds.minX < rhs.bounds.minX }
             return lhs.label < rhs.label
         }
+    }
+
+    /// Apps Control Center is not hosting. They have no extras menu bar, so
+    /// the only record of the icon is the Allow in the Menu Bar switch.
+    private static func blockedItems(
+        disallowed: MenuBarAllowance.Disallowed,
+        seen: Set<pid_t>
+    ) -> [OverflowItem] {
+        let me = ProcessInfo.processInfo.processIdentifier
+        var items: [OverflowItem] = []
+        for app in NSWorkspace.shared.runningApplications {
+            let pid = app.processIdentifier
+            if pid == me || seen.contains(pid) { continue }
+            let bundle = app.bundleIdentifier
+            if bundle == "com.apple.controlcenter" || bundle == "com.apple.MenuBarAgent" { continue }
+            guard disallowed.contains(app) else { continue }
+            let name = app.localizedName ?? bundle ?? "Hidden menu bar item"
+            items.append(OverflowItem(
+                id: "blocked-\(bundle ?? "app")-\(pid)",
+                bounds: .zero,
+                placement: .removed,
+                appName: name,
+                appIcon: app.icon,
+                pid: pid
+            ))
+        }
+        return items
     }
 
     /// Snapshot each item. Needs Screen Recording on macOS 14–26, where each
