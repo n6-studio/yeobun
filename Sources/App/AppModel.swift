@@ -1256,7 +1256,8 @@ final class AppModel: ObservableObject {
         }
         if MenuBarOverflowResolver.press(item) { return }
         if let pid = item.pid, let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate()
+            if let url = app.bundleURL, NSWorkspace.shared.open(url) { return }
+            app.activate(options: [.activateAllWindows])
             return
         }
         if let name = item.appName,

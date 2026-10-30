@@ -23,7 +23,6 @@ final class MenuBarHider {
     private var spinAngle: CGFloat = 0
     private var overflow: MenuBarOverflowPanel!
     private let overflowMenu = MenuBarOverflowMenu()
-    private var menuIgnoreWork: DispatchWorkItem?
 
     init(model: AppModel) {
         self.model = model
@@ -82,8 +81,6 @@ final class MenuBarHider {
     // MARK: - Apply
 
     private func apply(enabled: Bool) {
-        menuIgnoreWork?.cancel()
-        menuIgnoreWork = nil
         overflow.ignoreOutsideClicks = false
         guard enabled else {
             overflow.dismiss()
@@ -169,43 +166,39 @@ final class MenuBarHider {
             }
             return
         }
-        // Turned off in Allow in the Menu Bar: macOS 27.2 publishes no menu
-        // for the icon. Open the app instead of waiting on a click that misses.
-        if item.element == nil, item.placement == .removed {
-            overflow.dismiss()
-            model.activateOverflowItem(item)
-            return
-        }
-        let event = click == .right ? NSApp.currentEvent : nil
-        let entries = MenuBarOverflowResolver.menuEntries(for: item)
-        let shown = overflowMenu.present(
-            entries,
-            title: item.label,
-            in: overflow.hostView,
-            event: event
-        ) { [weak self] in
-            self?.overflow.dismiss()
-        }
-        if shown { return }
-        if click == .right {
-            showNativeContextMenu(item)
-        } else {
-            overflow.dismiss()
-            model.activateOverflowItem(item)
+        // macOS 27 treats the click's mouse-up as a click on the menu and
+        // dismisses it at once. Open only after that button is up.
+        DispatchQueue.main.async { [weak self] in
+            self?.openItemMenu(item, click: click)
         }
     }
 
-    private func showNativeContextMenu(_ item: OverflowItem) {
+    /// Left click opens the item's menu. Right click opens its context menu
+    /// when the item has one, and the same menu when a menu-bar click would.
+    /// Either menu is shown under the pointer, not at the item's off-screen frame.
+    private func openItemMenu(_ item: OverflowItem, click: OverflowClick) {
+        if NSEvent.pressedMouseButtons != 0 {
+            DispatchQueue.main.async { [weak self] in
+                self?.openItemMenu(item, click: click)
+            }
+            return
+        }
         overflow.ignoreOutsideClicks = true
-        menuIgnoreWork?.cancel()
-        if !MenuBarOverflowResolver.showMenu(item) {
-            _ = MenuBarOverflowResolver.click(item, right: true)
+        let entries = MenuBarOverflowResolver.snapshotMenu(for: item, click: click)
+        overflow.ignoreOutsideClicks = false
+        overflow.lowerForMenu()
+        let shown = overflowMenu.present(
+            entries,
+            title: item.label,
+            in: overflow.hostView
+        ) { [weak self] in
+            self?.overflow.dismiss()
         }
-        let work = DispatchWorkItem { [weak self] in
-            self?.overflow.ignoreOutsideClicks = false
-        }
-        menuIgnoreWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+        overflow.restoreLevel()
+        if shown { return }
+        // No status menu is published (Allow in the Menu Bar is off). Open the app.
+        overflow.dismiss()
+        model.activateOverflowItem(item)
     }
 
     private func presentOverflow(

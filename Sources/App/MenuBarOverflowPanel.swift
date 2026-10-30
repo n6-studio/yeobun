@@ -252,11 +252,29 @@ enum MenuBarOverflowResolver {
         return await captureWindows(items)
     }
 
-    /// The item's menu, if it has one. Read fresh at click time.
-    static func menuEntries(for item: OverflowItem) -> [OverflowMenuEntry] {
-        guard let element = item.element, let menu = child(of: element, role: kAXMenuRole as String)
-        else { return [] }
-        return entries(of: menu, depth: 0)
+    /// The menu a click on this status item would open, copied so it can be
+    /// shown under the pointer. A menu that only fills in when it opens is
+    /// pressed, copied, and closed. Off-screen items would otherwise open
+    /// that menu where nobody can see it.
+    static func snapshotMenu(for item: OverflowItem, click: OverflowClick) -> [OverflowMenuEntry] {
+        guard let element = liveElement(for: item) else { return [] }
+        if click == .right, actionNames(element).contains(kAXShowMenuAction as String) {
+            if let menu = revealMenu(of: element, action: kAXShowMenuAction as String) {
+                let copied = meaningful(entries(of: menu, depth: 0))
+                closeMenu(menu, owner: element)
+                if !copied.isEmpty { return copied }
+            }
+        }
+        if let menu = child(of: element, role: kAXMenuRole as String), !isMenuOpen(menu) {
+            let copied = meaningful(entries(of: menu, depth: 0))
+            if !copied.isEmpty { return copied }
+        }
+        if let menu = revealMenu(of: element, action: kAXPressAction as String) {
+            let copied = meaningful(entries(of: menu, depth: 0))
+            closeMenu(menu, owner: element)
+            return copied
+        }
+        return []
     }
 
     static func press(_ element: AXUIElement?) -> Bool {
@@ -373,6 +391,115 @@ enum MenuBarOverflowResolver {
             }
         }
         return nil
+    }
+
+    /// The pressable status item. MenuBarAgent wraps some items in a group
+    /// that itself has no actions; the menu lives on the child.
+    private static func liveElement(for item: OverflowItem) -> AXUIElement? {
+        if let element = item.element, stringAttribute(element, kAXRoleAttribute) != nil {
+            return pressable(element)
+        }
+        let pids = Set([item.pid].compactMap { $0 } + relatedPIDs(of: item))
+        for pid in pids {
+            let axApp = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(axApp, 0.15)
+            var barValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(axApp, "AXExtrasMenuBar" as CFString, &barValue) == .success,
+                  let barRef = barValue
+            else { continue }
+            let bar = barRef as! AXUIElement
+            var childrenValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(bar, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+                  let children = childrenValue as? [AXUIElement],
+                  !children.isEmpty
+            else { continue }
+            let usable = children.map(pressable).filter { !isOverflowControl($0) }
+            if usable.count == 1 { return usable[0] }
+            if let named = usable.first(where: { title(of: $0)?.caseInsensitiveCompare(item.label) == .orderedSame }) {
+                return named
+            }
+            return usable.first
+        }
+        return nil
+    }
+
+    private static func relatedPIDs(of item: OverflowItem) -> [pid_t] {
+        guard let pid = item.pid,
+              let app = NSRunningApplication(processIdentifier: pid),
+              let bundle = app.bundleIdentifier
+        else { return [] }
+        return NSWorkspace.shared.runningApplications.compactMap { other in
+            guard other.processIdentifier != pid, other.bundleIdentifier == bundle else { return nil }
+            return other.processIdentifier
+        }
+    }
+
+    private static func pressable(_ element: AXUIElement) -> AXUIElement {
+        if actionNames(element).isEmpty,
+           let inner = child(of: element, role: kAXMenuBarItemRole as String) ?? firstChild(element),
+           !actionNames(inner).isEmpty {
+            return inner
+        }
+        return element
+    }
+
+    private static func firstChild(_ element: AXUIElement) -> AXUIElement? {
+        var childrenValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenValue) == .success,
+              let children = childrenValue as? [AXUIElement]
+        else { return nil }
+        return children.first
+    }
+
+    private static func actionNames(_ element: AXUIElement) -> [String] {
+        var names: CFArray?
+        guard AXUIElementCopyActionNames(element, &names) == .success, let names else { return [] }
+        return names as? [String] ?? []
+    }
+
+    private static func isMenuOpen(_ menu: AXUIElement) -> Bool {
+        var sizeValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menu, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let sizeRef = sizeValue
+        else { return false }
+        var size = CGSize.zero
+        guard AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) else { return false }
+        return size.width > 1
+    }
+
+    /// Presses the item and waits until its menu has a size. A closed static
+    /// menu stays at 0×0, so a size means this click opened it.
+    private static func revealMenu(of element: AXUIElement, action: String) -> AXUIElement? {
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        let result = AXUIElementPerformAction(element, action as CFString)
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        guard result == .success else { return nil }
+        for _ in 0..<40 {
+            if let menu = child(of: element, role: kAXMenuRole as String), isMenuOpen(menu) {
+                return menu
+            }
+            usleep(10_000)
+        }
+        return nil
+    }
+
+    private static func closeMenu(_ menu: AXUIElement, owner: AXUIElement) {
+        guard isMenuOpen(menu) else { return }
+        var pid: pid_t = 0
+        AXUIElementGetPid(owner, &pid)
+        guard pid != 0 else { return }
+        for down in [true, false] {
+            CGEvent(keyboardEventSource: nil, virtualKey: 53, keyDown: down)?.postToPid(pid)
+        }
+        for _ in 0..<15 {
+            if !isMenuOpen(menu) { return }
+            usleep(10_000)
+        }
+    }
+
+    private static func meaningful(_ entries: [OverflowMenuEntry]) -> [OverflowMenuEntry] {
+        let usable = entries.contains { !$0.isSeparator && !$0.title.isEmpty }
+        return usable ? entries : []
     }
 
     private static func child(of element: AXUIElement, role: String) -> AXUIElement? {
@@ -585,6 +712,21 @@ final class MenuBarOverflowPanel {
 
     var isShown: Bool { panel?.isVisible ?? false }
     var hostView: NSView? { panel?.contentView }
+    private var savedLevel: NSWindow.Level?
+
+    /// The strip and a menu share the popup level. Drop the strip so the
+    /// menu opens in front of it, then put the level back.
+    func lowerForMenu() {
+        guard let panel, savedLevel == nil else { return }
+        savedLevel = panel.level
+        panel.level = .floating
+    }
+
+    func restoreLevel() {
+        guard let panel, let savedLevel else { return }
+        panel.level = savedLevel
+        self.savedLevel = nil
+    }
     /// While a foreign item's own menu is up, clicks go to that app and would
     /// otherwise look like an outside click.
     var ignoreOutsideClicks = false
@@ -814,6 +956,18 @@ private final class HelpPopoverDelegate: NSObject, NSPopoverDelegate {
 
 /// First mouse must land on the tile, including a right click, without a
 /// focus click first. The panel does not become key.
+///
+/// A miss on the clear panel falls through onto the app behind the strip,
+/// which both clicks that app and looks like the tile did nothing.
 private final class OverflowHostingView: NSHostingView<OverflowStrip> {
+    override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        if let hit = super.hitTest(point) {
+            return hit
+        }
+        // A clear panel lets a miss fall through onto the app behind the strip.
+        return bounds.contains(point) ? self : nil
+    }
 }

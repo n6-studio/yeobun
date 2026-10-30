@@ -53,6 +53,7 @@ struct OverflowStrip: View {
         .overlay {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.08))
+                .allowsHitTesting(false)
         }
         .padding(6)
         .fixedSize()
@@ -302,27 +303,30 @@ struct OverflowTile: View {
     @StateObject private var hover = HoverFlag()
 
     var body: some View {
-        content
-            .padding(.horizontal, layout == .list ? 6 : 2)
-            .frame(width: width, height: height, alignment: layout == .list ? .leading : .center)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(hover.on ? Color.primary.opacity(0.12) : Color.clear)
+        ZStack {
+            content
+                .padding(.horizontal, layout == .list ? 6 : 2)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: layout == .list ? .leading : .center)
+                .allowsHitTesting(false)
+            OverflowClickCatcher(
+                onLeft: { onClick(.left) },
+                onRight: { onClick(.right) },
+                onHover: { hover.on = $0 }
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay {
-                OverflowClickCatcher(
-                    onLeft: { onClick(.left) },
-                    onRight: { onClick(.right) },
-                    onHover: { hover.on = $0 }
-                )
-            }
-            .animation(reduceMotion ? nil : Motion.hover, value: hover.on)
-            .help(item.helpText)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(item.label)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityAction(named: "Right click") { onClick(.right) }
+        }
+        .frame(width: width, height: height, alignment: layout == .list ? .leading : .center)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(hover.on ? Color.primary.opacity(0.12) : Color.clear)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .animation(reduceMotion ? nil : Motion.hover, value: hover.on)
+        .help(item.helpText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onClick(.left) }
+        .accessibilityAction(named: "Right click") { onClick(.right) }
     }
 
     private var caption: String {
@@ -406,6 +410,10 @@ private struct OverflowItemIcon: View {
 
 /// SwiftUI `Button` only takes a left click. Status items distinguish left
 /// and right, so tiles use an AppKit view that reports both.
+///
+/// The view has to accept the tile's proposed size. A zero-sized catcher is
+/// skipped by hit testing, and the clear panel then lets the click through
+/// onto whatever is behind the strip.
 private struct OverflowClickCatcher: NSViewRepresentable {
     let onLeft: () -> Void
     let onRight: () -> Void
@@ -425,6 +433,10 @@ private struct OverflowClickCatcher: NSViewRepresentable {
         view.onRight = onRight
         view.onHover = onHover
     }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: OverflowClickView, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions()
+    }
 }
 
 final class OverflowClickView: NSView {
@@ -435,6 +447,7 @@ final class OverflowClickView: NSView {
     private var lastLeftDown = Date.distantPast
     private var lastLeftLocation = CGPoint.zero
 
+    override var mouseDownCanMoveWindow: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func updateTrackingAreas() {
