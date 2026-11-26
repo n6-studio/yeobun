@@ -125,6 +125,7 @@ swiftc "${SWIFTC_COMMON[@]}" \
   -framework Speech \
   -framework AVFoundation \
   -framework Carbon \
+  -framework CoreLocation \
   -o "$APP/Contents/MacOS/$EXEC" \
   "${CORE_SOURCES[@]}" "${APP_SOURCES[@]}"
 

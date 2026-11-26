@@ -39,6 +39,141 @@ enum CLICommands {
         }
     }
 
+    static func location(_ action: CLILocationAction, json: Bool) throws {
+        switch action {
+        case .list:
+            break
+        case .switchTo(let key):
+            try mapToolError {
+                let location = try NetworkLocations.match(key, in: NetworkLocations.snapshot().locations)
+                try NetworkLocations.switchTo(location)
+            }
+        case .add(let name):
+            do {
+                _ = try NetworkLocations.create(name)
+            } catch let error as NetworkLocationError where error.isCancelled {
+                throw CLIError.permission(error.localizedDescription)
+            } catch {
+                throw CLIError.failed(error.localizedDescription)
+            }
+        case .auto(let auto):
+            try locationAuto(auto)
+            emitLocationAuto(StatusBuilder.locationStatus(), json: json)
+            return
+        case .remove(let key):
+            do {
+                let location = try NetworkLocations.match(key, in: NetworkLocations.snapshot().locations)
+                try NetworkLocations.delete(location)
+            } catch let error as NetworkLocationError where error.isCancelled {
+                throw CLIError.permission(error.localizedDescription)
+            } catch {
+                throw CLIError.failed(error.localizedDescription)
+            }
+        }
+        emitLocations(StatusBuilder.locationStatus(), json: json)
+    }
+
+    private static func locationAuto(_ action: CLILocationAutoAction) throws {
+        let store = ToolStateStore.shared
+        switch action {
+        case .status:
+            return
+        case .on:
+            store.update { $0.locationAutoSwitch = true }
+        case .off:
+            store.update { $0.locationAutoSwitch = false }
+        case .add(let wifi, let key):
+            let next = try mapToolError {
+                let location = try NetworkLocations.match(key, in: NetworkLocations.snapshot().locations)
+                return try LocationRules.adding(wifi: wifi, location: location, to: store.current.locationRules)
+            }
+            store.update { $0.locationRules = next }
+        case .remove(let wifi):
+            let next = try mapToolError { try LocationRules.removing(wifi: wifi, from: store.current.locationRules) }
+            store.update { $0.locationRules = next }
+        case .otherwise(let key):
+            if let key {
+                let location = try mapToolError {
+                    try NetworkLocations.match(key, in: NetworkLocations.snapshot().locations)
+                }
+                store.update {
+                    $0.locationOtherwiseID = location.id
+                    $0.locationOtherwiseName = location.name
+                }
+            } else {
+                store.update {
+                    $0.locationOtherwiseID = nil
+                    $0.locationOtherwiseName = nil
+                }
+            }
+        }
+        store.notifyChange()
+    }
+
+    private static func emitLocationAuto(_ status: LocationStatusJSON, json: Bool) {
+        if json {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(status.auto), let text = String(data: data, encoding: .utf8) {
+                print(text)
+            }
+            return
+        }
+        let auto = status.auto
+        var line = auto.enabled ? "on" : "off"
+        if auto.enabled, !VoiceTool.isAppRunning { line += "  app not running" }
+        print(humanLine("auto", line))
+        let width = max(10, (auto.rules.map(\.wifi.count).max() ?? 0) + 2)
+        for rule in auto.rules {
+            print("  " + rule.wifi.padding(toLength: width, withPad: " ", startingAt: 0) + "→ " + rule.location)
+        }
+        print("  " + "otherwise".padding(toLength: width, withPad: " ", startingAt: 0) + "→ " + (auto.otherwise ?? "keep current"))
+    }
+
+    private static func emitLocations(_ status: LocationStatusJSON, json: Bool) {
+        if json {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(status), let text = String(data: data, encoding: .utf8) {
+                print(text)
+            }
+            return
+        }
+        if status.locations.isEmpty {
+            print("No network locations.")
+            return
+        }
+        let width = max(10, (status.locations.map(\.name.count).max() ?? 0) + 2)
+        for location in status.locations {
+            let mark = location.current ? "* " : "  "
+            let custom = location.services.filter { $0.enabled && !$0.dnsServers.isEmpty }
+            let dns = custom.isEmpty
+                ? "DNS from network"
+                : custom.map { "\($0.name) \($0.dnsServers.joined(separator: ", "))" }.joined(separator: "; ")
+            print(mark + location.name.padding(toLength: width, withPad: " ", startingAt: 0) + dns)
+        }
+        print("")
+        emitLocationAuto(status, json: false)
+        guard let dns = status.dns else { return }
+        print("")
+        print(humanLine("dns", humanDNS(dns)))
+        if !dns.searchDomains.isEmpty {
+            print(humanLine("search", dns.searchDomains.joined(separator: ", ")))
+        }
+        if !dns.resolverServers.isEmpty, dns.resolverServers != dns.servers {
+            print(humanLine("resolver", dns.resolverServers.joined(separator: ", ") + "  (system default, e.g. a VPN)"))
+        }
+    }
+
+    private static func humanDNS(_ dns: DNSInUseJSON) -> String {
+        var parts: [String] = []
+        parts.append(dns.servers.isEmpty ? "none" : dns.servers.joined(separator: ", "))
+        let via = [dns.service, dns.interface].compactMap { $0 }.joined(separator: " ")
+        let source = dns.source == "location" ? "set by location" : "from network"
+        parts.append(via.isEmpty ? "(\(source))" : "(\(via), \(source))")
+        return parts.joined(separator: "  ")
+    }
+
     private static func remoteStatus(_ key: String?, json: Bool) throws {
         let servers = RemoteCatalog.current()
         if servers.isEmpty {
@@ -265,6 +400,7 @@ enum CLICommands {
             } else {
                 print(humanLine("remote", "\(snapshot.remotes.count) configured"))
             }
+            print(humanLine("location", snapshot.location.current ?? "unknown"))
             if let mac = snapshot.mac {
                 print(humanLine("mac", humanMac(mac)))
             }

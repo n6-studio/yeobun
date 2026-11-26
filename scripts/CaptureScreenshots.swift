@@ -107,6 +107,10 @@ private func captureAll(to out: URL) throws {
         presentation.route = .storage
         seedHome(model)
     }
+    try writePair(name: "location", to: out) { model, presentation in
+        presentation.route = .location
+        seedHome(model)
+    }
     try writePair(name: "remote", to: out) { model, presentation in
         presentation.route = .remote(demoRemoteID)
         seedHome(model)
@@ -181,6 +185,17 @@ private func seedHome(_ model: AppModel) {
     model.stats = demoStats()
     model.remotes = [demoRemote()]
     model.remoteSamples = [demoRemoteID: demoRemoteSample()]
+    model.networkLocations = demoLocations()
+    model.networkLocationsLoaded = true
+    // Set the fields directly. The setters read and switch the real network.
+    model.locationAutoSwitch = true
+    model.locationRules = [
+        LocationRule(wifi: "Studio", locationID: "demo-home", locationName: "Home"),
+        LocationRule(wifi: "Office 5G", locationID: "demo-office", locationName: "Office")
+    ]
+    model.locationOtherwiseID = "demo-automatic"
+    model.currentWiFi = "Studio"
+    model.wifiNameAccess = .granted
     if let plist = NSDictionary(contentsOfFile: "Resources/Info.plist"),
        let version = plist["CFBundleShortVersionString"] as? String {
         model.appVersion = version
@@ -241,6 +256,29 @@ private func demoStats() -> SystemSample {
         ProcessUsage(pid: 3, name: "WindowServer", cpuPercent: 4, ramBytes: 480_000_000)
     ]
     return sample
+}
+
+@MainActor
+private func demoLocations() -> NetworkLocationSnapshot {
+    func wifi(_ servers: [String]) -> LocationNetworkService {
+        LocationNetworkService(id: UUID().uuidString, name: "Wi-Fi", enabled: true, servers: servers, searchDomains: [])
+    }
+    let automatic = NetworkLocation(id: "demo-automatic", name: "Automatic", services: [wifi([])])
+    let home = NetworkLocation(id: "demo-home", name: "Home", services: [wifi(["192.168.1.2", "1.1.1.1"])])
+    let office = NetworkLocation(id: "demo-office", name: "Office", services: [wifi(["10.0.0.53"])])
+    return NetworkLocationSnapshot(
+        locations: [automatic, home, office],
+        currentID: home.id,
+        dns: DNSInUse(
+            serviceName: "Wi-Fi",
+            interface: "en0",
+            servers: ["192.168.1.2", "1.1.1.1"],
+            searchDomains: ["lan"],
+            setByLocation: true,
+            resolverServers: ["192.168.1.2", "1.1.1.1"],
+            resolverSearchDomains: ["lan"]
+        )
+    )
 }
 
 private let demoRemoteID = UUID(uuidString: "3F1B7C2A-9E54-4D0B-A8C1-6D2E9B4F0A11")!

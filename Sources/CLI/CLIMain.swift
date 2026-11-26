@@ -60,6 +60,8 @@ struct CLIRequest {
             try CLICommands.mac(json: json)
         case .remote(let action):
             try CLICommands.remote(action, json: json)
+        case .location(let action):
+            try CLICommands.location(action, json: json)
         }
     }
 }
@@ -75,6 +77,25 @@ enum CLICommand {
     case voice(CLIVoiceAction)
     case mac
     case remote(CLIRemoteAction)
+    case location(CLILocationAction)
+}
+
+enum CLILocationAction {
+    case list
+    case switchTo(String)
+    case add(String)
+    case remove(String)
+    case auto(CLILocationAutoAction)
+}
+
+enum CLILocationAutoAction {
+    case status
+    case on
+    case off
+    case add(wifi: String, location: String)
+    case remove(wifi: String)
+    /// Nil keeps the current location on a Wi-Fi without a rule.
+    case otherwise(String?)
 }
 
 enum CLIRemoteAction {

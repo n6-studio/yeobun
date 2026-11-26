@@ -48,6 +48,7 @@ enum GlyphID: String, CaseIterable {
     case buildings
     case package
     case terminalWindow = "terminal-window"
+    case mapPin = "map-pin"
 }
 
 enum GlyphLibrary {
@@ -91,6 +92,8 @@ enum GlyphLibrary {
         case (.package, true): packageFill
         case (.terminalWindow, false): terminalWindowRegular
         case (.terminalWindow, true): terminalWindowFill
+        case (.mapPin, false): mapPinRegular
+        case (.mapPin, true): mapPinFill
         }
     }
 
@@ -1518,6 +1521,50 @@ enum GlyphLibrary {
         .line(176, 152),
         .cubic(180.39, 152, 184, 155.61, 184, 160),
         .cubic(184, 164.39, 180.39, 168, 176, 168),
+        .close,
+    ])
+    private static let mapPinRegular = GlyphArt([
+        .move(128, 64),
+        .cubic(106.06, 64, 88, 82.06, 88, 104),
+        .cubic(88, 125.94, 106.06, 144, 128, 144),
+        .cubic(149.94, 144, 168, 125.94, 168, 104),
+        .cubic(168, 82.06, 149.94, 64, 128, 64),
+        .close,
+        .move(128, 128),
+        .cubic(114.83, 128, 104, 117.17, 104, 104),
+        .cubic(104, 90.83, 114.83, 80, 128, 80),
+        .cubic(141.17, 80, 152, 90.83, 152, 104),
+        .cubic(152, 117.17, 141.17, 128, 128, 128),
+        .close,
+        .move(128, 16),
+        .cubic(79.75, 16.05, 40.05, 55.75, 40, 104),
+        .cubic(40, 135.4, 54.51, 168.68, 82, 200.25),
+        .cubic(94.35, 214.52, 108.25, 227.36, 123.45, 238.55),
+        .cubic(126.2, 240.48, 129.88, 240.48, 132.63, 238.55),
+        .cubic(147.8, 227.36, 161.67, 214.51, 174, 200.25),
+        .cubic(201.45, 168.68, 216, 135.4, 216, 104),
+        .cubic(215.95, 55.75, 176.25, 16.05, 128, 16),
+        .close,
+        .move(128, 222),
+        .cubic(111.47, 209, 56, 161.25, 56, 104),
+        .cubic(56, 64.5, 88.5, 32, 128, 32),
+        .cubic(167.5, 32, 200, 64.5, 200, 104),
+        .cubic(200, 161.23, 144.53, 209, 128, 222),
+        .close,
+    ])
+    private static let mapPinFill = GlyphArt([
+        .move(128, 16),
+        .cubic(79.75, 16.05, 40.05, 55.75, 40, 104),
+        .cubic(40, 179.3, 120, 236.17, 123.41, 238.55),
+        .cubic(126.16, 240.48, 129.84, 240.48, 132.59, 238.55),
+        .cubic(136, 236.17, 216, 179.3, 216, 104),
+        .cubic(215.95, 55.75, 176.25, 16.05, 128, 16),
+        .close,
+        .move(128, 72),
+        .cubic(145.55, 72, 160, 86.45, 160, 104),
+        .cubic(160, 121.55, 145.55, 136, 128, 136),
+        .cubic(110.45, 136, 96, 121.55, 96, 104),
+        .cubic(96, 86.45, 110.45, 72, 128, 72),
         .close,
     ])
 }

@@ -161,6 +161,7 @@ struct HomeList: View {
         case .tool(.battery): model.batteryPercentLabel
         case .tool(.network): model.networkGlanceLabel
         case .tool(.storage): model.diskUsedLabel
+        case .tool(.location): model.locationTileStatus
         case .remote(let id):
             model.remoteSample(id).status == .ok
                 ? model.remoteRowStats(id).map { "\($0.label) \($0.value)" }.joined(separator: ", ")

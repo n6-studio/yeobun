@@ -211,6 +211,21 @@ final class AppModel: ObservableObject {
     @Published var remoteAddNotice: String?
     @Published var remoteTestingID: UUID?
     @Published var remoteTestNotice: [UUID: String] = [:]
+    @Published var networkLocations: NetworkLocationSnapshot = .empty
+    @Published var networkLocationsLoaded = false
+    /// The location a switch is heading to.
+    @Published var locationSwitchingID: String?
+    /// Adding or deleting a location, which waits on the administrator prompt.
+    @Published var locationEditBusy = false
+    @Published var locationError: String?
+    /// Switch location when the Wi-Fi changes.
+    @Published var locationAutoSwitch = false
+    @Published var locationRules: [LocationRule] = []
+    @Published var locationOtherwiseID: String?
+    @Published var currentWiFi: String?
+    @Published var wifiNameAccess: WiFiNameAccess = .notAsked
+    /// Last thing automatic switching did, shown on the page.
+    @Published var locationAutoNotice: String?
     let timeoutChoices = [0, 5, 10, 15, 30, 60]
     let awakeDurationChoices = AwakeResume.durationChoices
     let menuBarStripIconSizeChoices = MenuBarTool.iconSizeChoices
@@ -240,6 +255,15 @@ final class AppModel: ObservableObject {
 
     private var panelWantsStats = false
     private var panelRoute: PanelRoute = .home
+    private let locationQueue = DispatchQueue(label: "studio.n6.yeobun.location", qos: .userInitiated)
+    private let locationWatcher = NetworkLocationWatcher()
+    private var locationRefreshWork: DispatchWorkItem?
+    private var locationEpoch = 0
+    private let wifiNameAuth = WiFiNameAuthorization()
+    /// Wi-Fi seen by the last automatic check. A switch only follows a change,
+    /// so picking another location by hand on the same Wi-Fi sticks.
+    private var lastAutoWiFi: String?
+    private var autoArmed = false
     private let voiceSession = VoiceSession()
     private let voiceHotKeys = VoiceHotKeyService()
     private var voiceObserver: NSObjectProtocol?
@@ -285,6 +309,9 @@ final class AppModel: ObservableObject {
         voiceTypesText = state.voiceTypesText
         voiceVocabulary = state.voiceVocabulary
         remotes = RemoteCatalog.clean(state.remotes)
+        locationAutoSwitch = state.locationAutoSwitch
+        locationRules = state.locationRules
+        locationOtherwiseID = state.locationOtherwiseID
         if defaults.object(forKey: Keys.launchAtLogin) == nil {
             launchAtLogin = true
             defaults.set(true, forKey: Keys.launchAtLogin)
@@ -1003,6 +1030,17 @@ final class AppModel: ObservableObject {
         }
         syncStatsSampling()
         refreshUpdateIfNeeded()
+        wifiNameAuth.onChange = { [weak self] access in
+            guard let self else { return }
+            self.wifiNameAccess = access
+            if access == .granted {
+                self.autoArmed = false
+                self.refreshLocations()
+            }
+        }
+        wifiNameAuth.start()
+        wifiNameAccess = wifiNameAuth.access
+        syncLocationWatcher()
     }
 
     func stop() {
@@ -1032,16 +1070,22 @@ final class AppModel: ObservableObject {
     func startStats() {
         panelWantsStats = true
         syncStatsSampling()
+        syncLocationWatcher()
+        refreshLocations()
     }
 
     func stopStats() {
         panelWantsStats = false
         syncStatsSampling()
+        syncLocationWatcher()
     }
 
     /// The open page decides which expensive reads the 1s tick is allowed to do.
     func notePanelRoute(_ route: PanelRoute) {
         panelRoute = route
+        if route == .location {
+            refreshLocations()
+        }
         guard panelWantsStats else { return }
         statsService.setBudget(statsBudget)
     }
@@ -1090,6 +1134,232 @@ final class AppModel: ObservableObject {
             }
         }
         remoteStatsService.start(servers: remotes, interval: 2.0)
+    }
+
+    // MARK: Network location
+
+    var locationTileStatus: String {
+        if let current = networkLocations.current { return current.name }
+        return networkLocationsLoaded ? "None" : "…"
+    }
+
+    var locationBusy: Bool {
+        locationSwitchingID != nil || locationEditBusy
+    }
+
+    /// The open panel needs live locations; automatic switching needs Wi-Fi changes
+    /// while the panel is closed too.
+    private func syncLocationWatcher() {
+        if panelWantsStats || locationAutoSwitch {
+            locationWatcher.onChange = { [weak self] in
+                DispatchQueue.main.async {
+                    self?.scheduleLocationRefresh()
+                }
+            }
+            locationWatcher.start()
+        } else {
+            locationWatcher.stop()
+            locationRefreshWork?.cancel()
+        }
+    }
+
+    /// A switch or a network join fires several keys at once. Read once they settle.
+    private func scheduleLocationRefresh() {
+        locationRefreshWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.refreshLocations()
+        }
+        locationRefreshWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    func refreshLocations() {
+        let epoch = locationEpoch
+        locationQueue.async { [weak self] in
+            let snapshot = NetworkLocations.snapshot()
+            let wifi = LocationRules.currentWiFi()
+            DispatchQueue.main.async {
+                guard let self, epoch == self.locationEpoch else { return }
+                self.applyLocations(snapshot)
+                if self.currentWiFi != wifi { self.currentWiFi = wifi }
+                self.applyAutoSwitch(wifi: wifi)
+            }
+        }
+    }
+
+    private func applyAutoSwitch(wifi: String?) {
+        guard locationAutoSwitch, !locationBusy else { return }
+        if autoArmed, wifi == lastAutoWiFi { return }
+        autoArmed = true
+        lastAutoWiFi = wifi
+        // Off Wi-Fi, or the name is hidden: leave the location alone.
+        guard let wifi else { return }
+        let snapshot = networkLocations
+        guard let targetID = LocationRules.targetID(
+            wifi: wifi,
+            rules: locationRules,
+            otherwiseID: locationOtherwiseID
+        ), targetID != snapshot.currentID,
+            let target = snapshot.locations.first(where: { $0.id == targetID })
+        else { return }
+        let time = Date().formatted(date: .omitted, time: .shortened)
+        locationAutoNotice = "Switched to \(target.name) on \(wifi) at \(time)"
+        switchLocation(target)
+    }
+
+    func setLocationAutoSwitch(_ enabled: Bool) {
+        guard enabled != locationAutoSwitch else { return }
+        if enabled, locationOtherwiseID == nil, locationRules.isEmpty,
+           let automatic = networkLocations.locations.first(where: {
+               $0.name.caseInsensitiveCompare("Automatic") == .orderedSame
+           }) {
+            // The usual setup: one rule for home, Automatic everywhere else.
+            setLocationOtherwise(automatic.id)
+        }
+        locationAutoSwitch = enabled
+        ToolStateStore.shared.update { $0.locationAutoSwitch = enabled }
+        if enabled, wifiNameAccess == .notAsked {
+            wifiNameAuth.request()
+        }
+        autoArmed = false
+        syncLocationWatcher()
+        refreshLocations()
+    }
+
+    /// Returns why the rule could not be added.
+    func addLocationRule(wifi: String, locationID: String) -> String? {
+        guard let location = networkLocations.locations.first(where: { $0.id == locationID }) else {
+            return "Pick a location."
+        }
+        do {
+            let next = try LocationRules.adding(wifi: wifi, location: location, to: locationRules)
+            saveLocationRules(next)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    func removeLocationRule(_ rule: LocationRule) {
+        saveLocationRules(locationRules.filter { $0.id != rule.id })
+    }
+
+    private func saveLocationRules(_ rules: [LocationRule]) {
+        locationRules = rules
+        ToolStateStore.shared.update { $0.locationRules = rules }
+        autoArmed = false
+        refreshLocations()
+    }
+
+    func setLocationOtherwise(_ id: String?) {
+        let name = id.flatMap { id in networkLocations.locations.first { $0.id == id }?.name }
+        locationOtherwiseID = id
+        ToolStateStore.shared.update {
+            $0.locationOtherwiseID = id
+            $0.locationOtherwiseName = name
+        }
+        autoArmed = false
+        refreshLocations()
+    }
+
+    /// Current name of a rule's location, or the saved one marked deleted.
+    func locationName(id: String, fallback: String) -> String {
+        networkLocations.locations.first { $0.id == id }?.name ?? "\(fallback) (deleted)"
+    }
+
+    func requestWiFiNameAccess() {
+        wifiNameAuth.request()
+    }
+
+    func openNetworkSettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.Network-Settings.extension",
+            "x-apple.systempreferences:com.apple.preference.network"
+        ]
+        for raw in urls {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
+    }
+
+    private func applyLocations(_ snapshot: NetworkLocationSnapshot) {
+        networkLocationsLoaded = true
+        if networkLocations != snapshot {
+            networkLocations = snapshot
+        }
+    }
+
+    func switchLocation(_ location: NetworkLocation) {
+        guard !locationBusy, location.id != networkLocations.currentID else { return }
+        locationError = nil
+        locationSwitchingID = location.id
+        locationEpoch += 1
+        let epoch = locationEpoch
+        locationQueue.async { [weak self] in
+            var failure: String?
+            do {
+                try NetworkLocations.switchTo(location)
+            } catch {
+                failure = error.localizedDescription
+            }
+            let snapshot = NetworkLocations.snapshot()
+            DispatchQueue.main.async {
+                guard let self, epoch == self.locationEpoch else { return }
+                self.locationSwitchingID = nil
+                self.locationError = failure
+                self.applyLocations(snapshot)
+                // The Wi-Fi may have changed while macOS held the switch.
+                self.refreshLocations()
+            }
+        }
+    }
+
+    /// `done` gets true once the location exists, so the page can clear its field.
+    func addLocation(_ name: String, done: @escaping (Bool) -> Void) {
+        guard !locationBusy else { return }
+        do {
+            _ = try NetworkLocations.validatedName(name, existing: networkLocations.locations)
+        } catch {
+            locationError = error.localizedDescription
+            done(false)
+            return
+        }
+        runLocationEdit(done: done) {
+            _ = try NetworkLocations.create(name)
+        }
+    }
+
+    func deleteLocation(_ location: NetworkLocation) {
+        guard !locationBusy, location.id != networkLocations.currentID else { return }
+        runLocationEdit(done: { _ in }) {
+            try NetworkLocations.delete(location)
+        }
+    }
+
+    private func runLocationEdit(done: @escaping (Bool) -> Void, _ body: @escaping () throws -> Void) {
+        locationError = nil
+        locationEditBusy = true
+        locationEpoch += 1
+        let epoch = locationEpoch
+        locationQueue.async { [weak self] in
+            var failure: String?
+            var succeeded = false
+            do {
+                try body()
+                succeeded = true
+            } catch let error as NetworkLocationError where error.isCancelled {
+                // Cancelling the password prompt is not an error worth showing.
+            } catch {
+                failure = error.localizedDescription
+            }
+            let snapshot = NetworkLocations.snapshot()
+            DispatchQueue.main.async {
+                guard let self, epoch == self.locationEpoch else { return }
+                self.locationEditBusy = false
+                self.locationError = failure
+                self.applyLocations(snapshot)
+                done(succeeded)
+            }
+        }
     }
 
     func toggleKeyboard() {
@@ -2129,6 +2399,19 @@ final class AppModel: ObservableObject {
         voiceSilenceSeconds = state.voiceSilenceSeconds
         voiceTypesText = state.voiceTypesText
         voiceVocabulary = state.voiceVocabulary
+        if state.locationAutoSwitch != locationAutoSwitch
+            || state.locationRules != locationRules
+            || state.locationOtherwiseID != locationOtherwiseID {
+            locationAutoSwitch = state.locationAutoSwitch
+            locationRules = state.locationRules
+            locationOtherwiseID = state.locationOtherwiseID
+            autoArmed = false
+            if locationAutoSwitch, wifiNameAccess == .notAsked {
+                wifiNameAuth.request()
+            }
+            syncLocationWatcher()
+            refreshLocations()
+        }
         let nextRemotes = RemoteCatalog.clean(state.remotes)
         if nextRemotes != remotes {
             remotes = nextRemotes

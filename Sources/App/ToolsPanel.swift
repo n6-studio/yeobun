@@ -115,6 +115,8 @@ struct ToolsPanel: View {
             NetworkDetail()
         case .storage:
             StorageDetail()
+        case .location:
+            LocationDetail()
         case .remote(let id):
             RemoteDetail(id: id)
         case .settings:
@@ -1974,7 +1976,7 @@ private struct MeterRow: View {
     }
 }
 
-private struct StatRow: View {
+struct StatRow: View {
     let label: String
     let value: String
     var level: UsageLevel = .normal

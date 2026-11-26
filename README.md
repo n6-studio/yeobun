@@ -147,6 +147,23 @@ Click **Shortcut** to record a different key combination. **Type into the front 
 
 Needs **Microphone**. Typing into other apps needs **Accessibility**, the same permission as Scroll reverse; without it the transcript still shows in the panel. Text goes in as key presses, so the clipboard is left alone. Keep the cursor where it is until a phrase settles, because corrections backspace from there.
 
+### Network location
+
+<table>
+<tr>
+<td><img src="docs/screenshots/location-light.png" width="320" alt="Network location in light mode"></td>
+<td><img src="docs/screenshots/location-dark.png" width="320" alt="Network location in dark mode"></td>
+</tr>
+</table>
+
+Switch between macOS network locations without digging through System Settings. The home row shows the location in use. Its page lists every location with the DNS it sets (**DNS from network** when it takes DNS from the Wi-Fi you join). Click one to switch. Switching needs no password and takes a few seconds while macOS applies it.
+
+**DNS in use** shows the primary service, whether its servers come from this location or from the network, the servers, and the search domains. When a VPN such as Tailscale puts its own resolver in front, that shows as **Default resolver**.
+
+Type a name and click **Add** to make a location with every current network service, then click **Network Settings…** to set its DNS in System Settings › Network. The **×** on a location deletes it. Adding and deleting ask for an administrator password. The location in use cannot be deleted.
+
+**Switch by Wi-Fi** changes location for you when you join a network. Add a rule per Wi-Fi name (**Current** fills in the one you are on), and pick what **Any other Wi-Fi** uses, for example Home on your home Wi-Fi and Automatic everywhere else. It only acts when the Wi-Fi changes, so a location you pick by hand stays until you join another network. Leaving Wi-Fi does not change anything. It runs while the panel is closed. macOS shows the Wi-Fi name only to apps with **Location Services**, so Yeobun asks for it when you turn this on; it never asks where you are.
+
 ## Stats
 
 Informational only. Pin CPU, memory, storage, network, power, or battery from Mac or a remote and it stays in the boxes on Home. **Mac** is a row; its page includes storage. Each remote is a row. Sampled while the panel is open, and in the menu bar if you turn on a stat.
@@ -214,6 +231,11 @@ yeobun voice vocab add kubectl --sounds-like "cube control"
 yeobun mac
 yeobun remote add vps --name VPS
 yeobun remote status
+yeobun location
+yeobun location switch Home
+yeobun location auto add "My Home Wi-Fi" Home
+yeobun location auto otherwise Automatic
+yeobun location auto on
 ```
 
 Every command accepts `--json`. Exit codes: `0` ok, `1` failed, `2` usage, `3` permission. `yeobun --help` is the full contract.
@@ -232,5 +254,6 @@ open ~/Applications/Yeobun.app
 - `yeobun voice on|off` is the master switch and is remembered. `yeobun voice start|stop` controls listening and needs the app open; the CLI never touches the microphone.
 - `yeobun voice vocab` lists the vocabulary; `vocab add <term> [--sounds-like <text>]`, `vocab remove <term>`, and `vocab clear` edit it. Adding a term that is already there merges the new sounds-like entries into it. The list is also under `voice.vocabulary` in the status JSON.
 - `yeobun remote` lists saved SSH servers. `remote add <host> [--name] [--user] [--port] [--identity]` and `remote remove <name-or-id>` edit the list. `remote status` probes live CPU, RAM, load, disk, and power (Linux). Human `yeobun status` only reports how many remotes are configured; live numbers are `yeobun remote status`. Power is live watts when the host exposes them. Linux RAPL is often root-only, and many VMs report none.
+- `yeobun location` lists network locations, the DNS each one sets, and the DNS in use. `location switch <name-or-id>` changes location without a password. `location add <name>` and `location remove <name-or-id>` ask for an administrator (sudo in a terminal). `location auto` shows Switch by Wi-Fi; `auto on|off`, `auto add <wifi> <location>`, `auto remove <wifi>`, and `auto otherwise <location|keep>` edit it. The app does the switching, so it has to be running. The current location and the rules are `location` in the status JSON.
 - Lid awake asks for an administrator password once.
 - Built-in keyboard lasts until you unlock or reboot. Sleep can drop the mapping; the app re-applies it if the lock was still on. Scroll reverse and Keep awake keep running after Quit until you turn them off. Lid awake stays until you turn it off.

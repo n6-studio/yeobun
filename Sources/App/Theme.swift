@@ -57,6 +57,7 @@ enum PanelRoute: Equatable, Hashable {
     case battery
     case network
     case storage
+    case location
     case remote(UUID)
     case settings
     case settingsGeneral
@@ -76,6 +77,7 @@ enum PanelRoute: Equatable, Hashable {
         case .battery: ToolID.battery.title
         case .network: ToolID.network.title
         case .storage: ToolID.storage.title
+        case .location: ToolID.location.title
         case .remote: "Remote"
         case .settings: "Settings"
         case .settingsGeneral: "General"
@@ -186,6 +188,7 @@ extension ToolID {
         case .battery: "Battery"
         case .network: "Network"
         case .storage: "Storage"
+        case .location: "Network location"
         }
     }
 
@@ -201,6 +204,7 @@ extension ToolID {
         case .battery: .batteryFull
         case .network: .wifiHigh
         case .storage: .hardDrive
+        case .location: .mapPin
         }
     }
 
@@ -212,7 +216,7 @@ extension ToolID {
         case .awake: ModuleColor.awake
         case .menuBar: ModuleColor.menuBar
         case .voice: ModuleColor.voice
-        case .machine, .battery, .network, .storage: ModuleColor.machine
+        case .machine, .battery, .network, .storage, .location: ModuleColor.machine
         }
     }
 
@@ -232,6 +236,7 @@ extension ToolID {
         case .battery: .battery
         case .network: .network
         case .storage: .storage
+        case .location: .location
         }
     }
 }

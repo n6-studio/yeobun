@@ -43,6 +43,12 @@ struct ToolState: Codable, Equatable {
     var keyboardBacklightSavedAuto: Bool = false
     /// External SSH hosts. Each one is a row on Home.
     var remotes: [RemoteServer] = []
+    /// Switch network location when the Wi-Fi changes. The app does the switching.
+    var locationAutoSwitch: Bool = false
+    var locationRules: [LocationRule] = []
+    /// Location for any Wi-Fi without a rule. Nil keeps the current one.
+    var locationOtherwiseID: String?
+    var locationOtherwiseName: String?
 
     init() {}
 
@@ -95,6 +101,10 @@ struct ToolState: Codable, Equatable {
         remotes = RemoteCatalog.clean(
             try container.decodeIfPresent([RemoteServer].self, forKey: .remotes) ?? []
         )
+        locationAutoSwitch = try container.decodeIfPresent(Bool.self, forKey: .locationAutoSwitch) ?? false
+        locationRules = try container.decodeIfPresent([LocationRule].self, forKey: .locationRules) ?? []
+        locationOtherwiseID = try container.decodeIfPresent(String.self, forKey: .locationOtherwiseID)
+        locationOtherwiseName = try container.decodeIfPresent(String.self, forKey: .locationOtherwiseName)
         if menuBarHideEnabled {
             menuBarHidden = true
         }

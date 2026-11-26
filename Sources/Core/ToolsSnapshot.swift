@@ -94,6 +94,64 @@ struct MacStatusJSON: Encodable {
     var processes: [ProcessJSON]
 }
 
+struct LocationServiceJSON: Encodable {
+    var name: String
+    var enabled: Bool
+    /// Typed into the location. Empty means DNS comes from the network.
+    var dnsServers: [String]
+    var searchDomains: [String]
+}
+
+struct LocationJSON: Encodable {
+    var id: String
+    var name: String
+    var current: Bool
+    var services: [LocationServiceJSON]
+}
+
+struct DNSInUseJSON: Encodable {
+    var service: String?
+    var interface: String?
+    var servers: [String]
+    var searchDomains: [String]
+    /// "location" when the current location sets the servers, "network" when DHCP does.
+    var source: String
+    /// System default resolver. A VPN can differ from the service.
+    var resolverServers: [String]
+    var resolverSearchDomains: [String]
+}
+
+struct LocationRuleJSON: Encodable {
+    var wifi: String
+    var location: String
+    var locationId: String
+}
+
+struct LocationAutoJSON: Encodable {
+    var enabled: Bool
+    var rules: [LocationRuleJSON]
+    /// Location for a Wi-Fi without a rule. Nil keeps the current one.
+    var otherwise: String?
+    var otherwiseId: String?
+
+    enum CodingKeys: String, CodingKey { case enabled, rules, otherwise, otherwiseId }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(rules, forKey: .rules)
+        try container.encode(otherwise, forKey: .otherwise)
+        try container.encode(otherwiseId, forKey: .otherwiseId)
+    }
+}
+
+struct LocationStatusJSON: Encodable {
+    var current: String?
+    var locations: [LocationJSON]
+    var dns: DNSInUseJSON?
+    var auto: LocationAutoJSON
+}
+
 struct AccessoryBatteryJSON: Encodable {
     var name: String
     var percent: Int
@@ -113,6 +171,7 @@ struct ToolsSnapshot: Encodable {
     var menubar: MenuBarStatusJSON
     var voice: VoiceStatusJSON
     var remotes: [RemoteConfigJSON]
+    var location: LocationStatusJSON
     var mac: MacStatusJSON?
 }
 
@@ -207,7 +266,57 @@ enum StatusBuilder {
                     identity: server.identityPath
                 )
             },
+            location: locationStatus(),
             mac: includeMac ? macStatus() : nil
+        )
+    }
+
+    static func locationStatus(_ snapshot: NetworkLocationSnapshot = NetworkLocations.snapshot()) -> LocationStatusJSON {
+        let state = ToolStateStore.shared.current
+        func name(_ id: String?, fallback: String?) -> String? {
+            guard let id else { return nil }
+            return snapshot.locations.first { $0.id == id }?.name ?? fallback
+        }
+        return LocationStatusJSON(
+            current: snapshot.current?.name,
+            locations: snapshot.locations.map { location in
+                LocationJSON(
+                    id: location.id,
+                    name: location.name,
+                    current: location.id == snapshot.currentID,
+                    services: location.services.map {
+                        LocationServiceJSON(
+                            name: $0.name,
+                            enabled: $0.enabled,
+                            dnsServers: $0.servers,
+                            searchDomains: $0.searchDomains
+                        )
+                    }
+                )
+            },
+            dns: snapshot.dns.map { dns in
+                DNSInUseJSON(
+                    service: dns.serviceName,
+                    interface: dns.interface,
+                    servers: dns.servers,
+                    searchDomains: dns.searchDomains,
+                    source: dns.setByLocation ? "location" : "network",
+                    resolverServers: dns.resolverServers,
+                    resolverSearchDomains: dns.resolverSearchDomains
+                )
+            },
+            auto: LocationAutoJSON(
+                enabled: state.locationAutoSwitch,
+                rules: state.locationRules.map {
+                    LocationRuleJSON(
+                        wifi: $0.wifi,
+                        location: name($0.locationID, fallback: $0.locationName) ?? $0.locationName,
+                        locationId: $0.locationID
+                    )
+                },
+                otherwise: name(state.locationOtherwiseID, fallback: state.locationOtherwiseName),
+                otherwiseId: state.locationOtherwiseID
+            )
         )
     }
 

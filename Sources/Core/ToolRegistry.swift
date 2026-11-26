@@ -22,7 +22,7 @@ final class ToolRegistry {
         case .awake: awake
         case .menuBar: menuBar
         case .voice: voice
-        case .machine, .battery, .network, .storage:
+        case .machine, .battery, .network, .storage, .location:
             preconditionFailure("\(id.rawValue) is informational")
         }
     }

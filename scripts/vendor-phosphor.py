@@ -35,6 +35,7 @@ ICONS = [
     ("buildings", "buildings", "buildings"),
     ("package", "package", "package"),
     ("terminalWindow", "terminal-window", "terminal-window"),
+    ("mapPin", "map-pin", "map-pin"),
 ]
 
 TOKEN = re.compile(r"[AaCcHhLlMmQqSsVvZz]|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")

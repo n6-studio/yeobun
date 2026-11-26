@@ -38,6 +38,14 @@ enum CLIParser {
       yeobun remote add <host> [--name <text>] [--user <user>] [--port N] [--identity <path>] [--json]
       yeobun remote remove <name-or-id> [--json]
       yeobun remote status [<name-or-id>] [--json]
+      yeobun location [--json]
+      yeobun location switch <name-or-id> [--json]
+      yeobun location add <name> [--json]
+      yeobun location remove <name-or-id> [--json]
+      yeobun location auto [on|off] [--json]
+      yeobun location auto add <wifi> <location> [--json]
+      yeobun location auto remove <wifi> [--json]
+      yeobun location auto otherwise <location|keep> [--json]
 
     keyboard  Built-in keyboard
     scroll    Scroll reverse
@@ -52,6 +60,13 @@ enum CLIParser {
     remote    External SSH servers. add/remove saves the list; status probes
               live CPU, RAM, load, disk, and power. Host can be an ssh config alias.
               Needs a key in ssh-agent or ~/.ssh; Linux hosts only.
+    location  Network locations. Lists them with the DNS each one sets and the
+              DNS in use now. switch needs no password; add and remove ask for
+              an administrator. add copies every current network service.
+              auto switches location when the Wi-Fi changes: a rule per Wi-Fi
+              name, and otherwise for any other Wi-Fi (keep = stay put). The
+              app does the switching and needs Location Services to read the
+              Wi-Fi name.
 
     Keyboard --minutes: \(keyboardMinutes.map(String.init).joined(separator: ", "))
     Keep awake --minutes: \(awakeMinutes.map(String.init).joined(separator: ", ")) (omit for indefinitely)
@@ -88,6 +103,8 @@ enum CLIParser {
             return CLIRequest(command: .mac, json: json)
         case "remote":
             return CLIRequest(command: .remote(try parseRemote(Array(tokens.dropFirst()))), json: json)
+        case "location":
+            return CLIRequest(command: .location(try parseLocation(Array(tokens.dropFirst()))), json: json)
         case "keyboard":
             return CLIRequest(command: .keyboard(try parseSwitch(Array(tokens.dropFirst()), tool: .keyboard)), json: json)
         case "scroll":
@@ -125,6 +142,58 @@ enum CLIParser {
             return try parseRemoteAdd(rest)
         default:
             throw CLIError.usage("Unknown action: \(action) (expected add, remove, status, or list)")
+        }
+    }
+
+    private static func parseLocation(_ tokens: [String]) throws -> CLILocationAction {
+        guard let action = tokens.first else { return .list }
+        let rest = Array(tokens.dropFirst())
+        switch action {
+        case "list", "status":
+            guard rest.isEmpty else { throw CLIError.usage("Unexpected arguments for location \(action).") }
+            return .list
+        case "auto":
+            return .auto(try parseLocationAuto(rest))
+        case "switch", "add", "remove":
+            guard rest.count == 1, !rest[0].trimmingCharacters(in: .whitespaces).isEmpty else {
+                let what = action == "add" ? "a name" : "a name or id"
+                throw CLIError.usage("location \(action) needs \(what). Quote it if it has spaces.")
+            }
+            switch action {
+            case "switch": return .switchTo(rest[0])
+            case "add": return .add(rest[0])
+            default: return .remove(rest[0])
+            }
+        default:
+            throw CLIError.usage("Unknown action: \(action) (expected switch, add, remove, or list)")
+        }
+    }
+
+    private static func parseLocationAuto(_ tokens: [String]) throws -> CLILocationAutoAction {
+        guard let action = tokens.first else { return .status }
+        let rest = Array(tokens.dropFirst())
+        func nonEmpty(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespaces).isEmpty }
+        switch action {
+        case "status", "on", "off":
+            guard rest.isEmpty else { throw CLIError.usage("Unexpected arguments for location auto \(action).") }
+            return action == "on" ? .on : action == "off" ? .off : .status
+        case "add":
+            guard rest.count == 2, rest.allSatisfy(nonEmpty) else {
+                throw CLIError.usage("location auto add needs a Wi-Fi name and a location. Quote names with spaces.")
+            }
+            return .add(wifi: rest[0], location: rest[1])
+        case "remove":
+            guard rest.count == 1, nonEmpty(rest[0]) else {
+                throw CLIError.usage("location auto remove needs a Wi-Fi name.")
+            }
+            return .remove(wifi: rest[0])
+        case "otherwise":
+            guard rest.count == 1, nonEmpty(rest[0]) else {
+                throw CLIError.usage("location auto otherwise needs a location, or keep.")
+            }
+            return .otherwise(rest[0].lowercased() == "keep" ? nil : rest[0])
+        default:
+            throw CLIError.usage("Unknown action: \(action) (expected on, off, add, remove, otherwise, or status)")
         }
     }
 

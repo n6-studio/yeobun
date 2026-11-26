@@ -16,13 +16,14 @@ enum ToolID: String, CaseIterable, Identifiable {
     case battery
     case network
     case storage
+    case location
 
     var id: String { rawValue }
 
     var kind: ToolKind {
         switch self {
         case .keyboard, .scroll, .lid, .awake, .menuBar, .voice: .toggle
-        case .machine, .battery, .network, .storage: .informational
+        case .machine, .battery, .network, .storage, .location: .informational
         }
     }
 
